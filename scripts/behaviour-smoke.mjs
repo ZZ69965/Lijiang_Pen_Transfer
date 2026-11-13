@@ -142,7 +142,17 @@ try {
     record('double click did not submit twice', seq === await page.locator('.market-reply').getAttribute('data-sequence'), `sequence=${seq}`);
     await shot(page, 'desktop-07-market-completed');
 
-    // revisit remembers the result
+    // same-visit revisit: the completed purchase is remembered
+    await page.getByRole('button', { name: '再看看别的渔获' }).click();
+    await page.waitForTimeout(300);
+    const record1 = await page.locator('.market-record').innerText().catch(() => '');
+    record('same-visit revisit shows the previous purchase', /一尾大鱼/.test(record1), record1.replace(/\s+/g, ' '));
+    record('revisit restarts at 等待 rather than replaying the purchase', (await stepState()).includes('等待'));
+    await page.getByRole('button', { name: /一尾小鱼|向摊主打听/ }).first().click();
+    await page.waitForTimeout(200);
+    await page.getByRole('button', { name: '关闭互动' }).click();
+
+    // revisit after reload: memory is deliberately per-visit only
     await page.reload({ waitUntil: 'domcontentloaded' });
     await page.getByRole('button', { name: /山水漫游/ }).click();
     await page.waitForSelector('.scroll-canvas');
@@ -209,6 +219,32 @@ try {
     record('finale return restores the 4th-scene camera', progressBefore === progressAfter, `${progressBefore} → ${progressAfter}`);
     record('finale return restores the landmark', /玻璃桥/.test(samePlace), samePlace.replace(/\s+/g, ' '));
     await shot(page, 'desktop-10-after-finale-return');
+
+    // ------------------------------------------------------- audio lifecycle
+    await page.locator('.scene-time .time-switcher button', { hasText: '入夜' }).click();
+    await page.waitForTimeout(1200);
+    await page.getByRole('button', { name: /夜游|江上夜游|夜航/ }).first().click();
+    await page.waitForSelector('.night-music-button', { timeout: 15000 });
+    const musicLabel = async () => (await page.locator('.night-music-button').innerText()).replace(/\s+/g, ' ');
+    await page.locator('.night-music-button').click();
+    await page.waitForTimeout(1600);
+    record('night music starts on request', /暂停/.test(await musicLabel()), await musicLabel());
+    await page.evaluate(() => {
+      Object.defineProperty(document, 'hidden', { value: true, configurable: true });
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+    await page.waitForTimeout(700);
+    record('hiding the page stops the music', /播放/.test(await musicLabel()), await musicLabel());
+    await page.evaluate(() => {
+      Object.defineProperty(document, 'hidden', { value: false, configurable: true });
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+    await page.waitForTimeout(600);
+    record('returning to the page does not resume sound', /播放/.test(await musicLabel()), await musicLabel());
+    await shot(page, 'desktop-08b-night-music-stopped');
+    await page.getByRole('button', { name: '关闭互动' }).click();
+    await page.locator('.scene-time .time-switcher button', { hasText: '正午' }).click();
+    await page.waitForTimeout(600);
 
     // -------------------------------------------------------- rotation check
     const before = await page.locator('.scroll-progress').getAttribute('aria-label');

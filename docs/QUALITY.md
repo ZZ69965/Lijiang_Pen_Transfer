@@ -52,12 +52,13 @@ npm run preview
 ```bash
 npm run build
 npm run preview -- --host 127.0.0.1 --port 4173 --strictPort &   # 保持运行
-npm run test:browser                 # 27 项断言 + qa/<日期>/*.png（playwright-core 已锁定为 devDependency）
+npm run test:browser                 # 32 项断言 + qa/<日期>/*.png（playwright-core 已锁定为 devDependency）
 node load-compare.mjs                # 首次可操作资源对比（需 4174 端口上的改动前构建）
 ```
 
-覆盖：首次只等当前画卷、非关键资源失败不阻塞、鱼市五阶段/取消/双击/重访、拖动不误触热点、
-指南占用输入、卷尾返回恢复镜头与地标、旋转保留位置、当前画卷失败的退路、三视口 pageerror。
+覆盖：首次只等当前画卷、非关键资源失败不阻塞、鱼市五阶段/取消/双击/同次重访/刷新无残留、
+夜间器乐隐藏即停且不复播、拖动不误触热点、指南占用输入、卷尾返回恢复镜头与地标、
+旋转保留位置、当前画卷失败的退路、三视口 pageerror。
 
 **边界**：headless SwiftShader 无 WebGL，三维序章只验证了降级退路；本机同机测得的
 "首次可操作时间"不代表真实网速，只作结构性证据。真机未测。
