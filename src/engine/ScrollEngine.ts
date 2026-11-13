@@ -10,7 +10,7 @@ import {
   ALL_ASSETS, assetKey, planAssets, resolvePose, type Pose, type PlannedAsset,
 } from '../content/assets';
 import {
-  HERO_SCALE, clampHeroX, footlineReviewAt, walkwayY,
+  HERO_HEIGHT, HERO_SCALE, clampHeroX, footlineReviewAt, walkwayY,
 } from '../content/walkway';
 import {
   cameraAround, centreOf, clampZoom, fitZoom, isDrag, resizeCamera, zoomBounds,
@@ -87,6 +87,12 @@ export class ScrollEngine {
   private reducedMotion = false;
   private visible = true;
   private mode: VisitMode = 'guided';
+  /**
+   * Free mode is "pure viewing": the painting alone, no walker. Guided mode
+   * ("人物随行") shows the figure and the walking controls.
+   */
+  private walkerVisible = true;
+  private contactShadow: Sprite | null = null;
   private time: TimeOfDay = 'morning';
   private nightControls: NightControls = { view: 'shore', lights: false, rhythm: false, music: false, drones: false };
   private heroX = 260;
@@ -227,6 +233,15 @@ export class ScrollEngine {
       this.setHeroTexture(this.pose, true);
       this.hero.position.set(this.heroX, walkwayY(this.heroX));
       this.world.addChild(this.hero);
+      // A restrained contact shadow is the only cue that the figure is standing
+      // ON the platform rather than floating in front of it.
+      this.contactShadow = new Sprite(Texture.WHITE);
+      this.contactShadow.anchor.set(0.5, 0.5);
+      this.contactShadow.tint = 0x2f3a2e;
+      this.contactShadow.alpha = 0.22;
+      this.contactShadow.width = HERO_HEIGHT * 0.42;
+      this.contactShadow.height = HERO_HEIGHT * 0.06;
+      this.world.addChildAt(this.contactShadow, this.world.getChildIndex(this.hero));
     } else {
       console.warn('No hero pose available yet; painting remains usable.');
     }
@@ -584,6 +599,17 @@ export class ScrollEngine {
 
   setMode(mode: VisitMode): void { this.mode = mode; }
 
+  /** Free mode hides the walker entirely; guided mode shows it. */
+  setWalkerVisible(visible: boolean): void {
+    this.walkerVisible = visible;
+    if (this.hero) this.hero.visible = visible;
+    if (this.contactShadow) this.contactShadow.visible = visible;
+    if (!visible) {
+      this.walkDirection = 0;
+      this.destination = null;
+    }
+  }
+
   setTimeOfDay(time: TimeOfDay): void {
     const changed = this.time !== time;
     this.time = time;
@@ -604,15 +630,20 @@ export class ScrollEngine {
     this.emitStatus();
   }
 
+  /**
+   * Frame a painted subject. Camera framing and the standing position are
+   * deliberately separate: centring 象鼻山 must not require standing on water.
+   */
   focusPlace(id: PlaceId, instant = false): void {
     const place = PLACES.find((p) => p.id === id) ?? PLACES[0];
     this.cameraTarget = place.worldX - this.viewSize.width / (2 * this.zoom);
     if (instant) { this.cameraLeft = this.cameraTarget; this.cameraTarget = null; this.applyCamera(); }
-    if (this.mode === 'guided' && !instant) {
-      this.destination = clampHeroX(place.worldX);
+    // Only the guided "人物随行" mode moves the walker; free mode stays looking.
+    if (this.mode === 'guided' && !instant && this.walkerVisible) {
+      this.destination = clampHeroX(place.standX);
     }
     if (this.mode === 'free') {
-      this.heroX = clampHeroX(place.worldX);
+      this.heroX = clampHeroX(place.standX);
       this.action = null;
     }
   }
@@ -753,9 +784,18 @@ export class ScrollEngine {
 
     if (this.hero) {
       const isWalking = !this.action && direction !== 0;
+      const ground = walkwayY(this.heroX);
       const bob = this.reducedMotion || !isWalking ? 0 : Math.sin(this.elapsed * 11) * 1.6;
-      this.hero.position.set(this.heroX, walkwayY(this.heroX) + bob);
+      this.hero.position.set(this.heroX, ground + bob);
       this.hero.scale.x = Math.abs(this.hero.scale.x) * this.facing;
+      this.hero.visible = this.walkerVisible;
+      if (this.contactShadow) {
+        // Kept on the ground line (no bob) so the shadow reads as the feet's
+        // contact patch; narrower in the bridge shade where light is diffuse.
+        this.contactShadow.visible = this.walkerVisible;
+        this.contactShadow.position.set(this.heroX, ground - 1);
+        this.contactShadow.scale.x = this.facing < 0 ? -1 : 1;
+      }
     }
 
     if (this.cameraTarget !== null) {

@@ -66,6 +66,7 @@ const ScrollStage = forwardRef<StageHandle, StageProps>(function ScrollStage(pro
     void engine.init().then(() => {
       if (engineRef.current !== engine) return;
       engine.setMode(latest.current.mode);
+      engine.setWalkerVisible(latest.current.mode === 'guided');
       engine.setTimeOfDay(latest.current.time);
       engine.setNightControls({ view: latest.current.nightView, lights: latest.current.nightLights, rhythm: latest.current.nightRhythm, music: latest.current.musicPlaying, drones: latest.current.nightDrones });
       engine.setMusicController(latest.current.musicController);
@@ -82,7 +83,13 @@ const ScrollStage = forwardRef<StageHandle, StageProps>(function ScrollStage(pro
     };
   }, []);
 
-  useEffect(() => { engineRef.current?.setMode(props.mode); }, [props.mode]);
+  useEffect(() => {
+    const engine = engineRef.current;
+    if (!engine) return;
+    engine.setMode(props.mode);
+    // 漫游 is pure viewing: the painting alone, no figure to stand anywhere.
+    engine.setWalkerVisible(props.mode === 'guided');
+  }, [props.mode]);
   useEffect(() => { engineRef.current?.setTimeOfDay(props.time); }, [props.time]);
   useEffect(() => {
     engineRef.current?.setNightControls({ view: props.nightView, lights: props.nightLights, rhythm: props.nightRhythm, music: props.musicPlaying, drones: props.nightDrones });

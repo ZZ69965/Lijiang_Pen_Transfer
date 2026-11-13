@@ -61,8 +61,9 @@ test('all poses share one scale factor, so the figure never changes size', () =>
   for (const [pose, size] of Object.entries(sizes)) {
     const worldWidth = size.width * HERO_SCALE;
     const worldHeight = size.height * HERO_SCALE;
-    assert.ok(worldWidth > 20 && worldWidth < 75, `${pose} world width ${worldWidth.toFixed(1)}`);
-    assert.ok(worldHeight > 95 && worldHeight < 125, `${pose} world height ${worldHeight.toFixed(1)}`);
+    // R2 lowered HERO_HEIGHT 116 → 96 to match the painted architecture.
+    assert.ok(worldWidth > 18 && worldWidth < 65, `${pose} world width ${worldWidth.toFixed(1)}`);
+    assert.ok(worldHeight > 78 && worldHeight < 105, `${pose} world height ${worldHeight.toFixed(1)}`);
   }
   // A stride pose is shorter than standing — the very reason height-alignment
   // used to enlarge it. Guard against reintroducing per-pose height alignment.
