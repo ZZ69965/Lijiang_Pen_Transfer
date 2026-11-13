@@ -10,7 +10,7 @@ import {
   ALL_ASSETS, assetKey, planAssets, resolvePose, type Pose, type PlannedAsset,
 } from '../content/assets';
 import {
-  HERO_HEIGHT, HERO_SONG_HEIGHT, clampHeroX, footlineReviewAt, walkwayY,
+  HERO_SCALE, clampHeroX, footlineReviewAt, walkwayY,
 } from '../content/walkway';
 import {
   cameraAround, centreOf, clampZoom, fitZoom, isDrag, resizeCamera, zoomBounds,
@@ -699,10 +699,10 @@ export class ScrollEngine {
     if (!texture) return;
     if (!force && this.pose === pose && this.hero.texture === texture) return;
     this.hero.texture = texture;
-    const height = pose === 'song' ? HERO_SONG_HEIGHT : HERO_HEIGHT;
-    this.hero.height = height;
-    this.hero.width = height * (texture.width / texture.height);
-    this.hero.scale.x = Math.abs(this.hero.scale.x) * this.facing;
+    // Uniform scale for every pose so the figure never changes size between
+    // standing, walking and singing (see HERO_SCALE for why).
+    this.hero.scale.set(HERO_SCALE, HERO_SCALE);
+    this.hero.scale.x = HERO_SCALE * this.facing;
     this.pose = pose;
   }
 

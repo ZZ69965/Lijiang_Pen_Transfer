@@ -9,7 +9,8 @@
     "build": "npm run verify:assets && tsc --noEmit && vite build",
     "preview": "vite preview --host 0.0.0.0",
     "verify:assets": "node scripts/verify-assets.mjs",
-    "test": "node --experimental-strip-types --test tests/*.test.mjs"
+    "test": "node --experimental-strip-types --test tests/*.test.mjs",
+    "test:browser": "node scripts/behaviour-smoke.mjs"
   },
   "dependencies": {
     "pixi.js": "8.23.0",
@@ -23,7 +24,8 @@
     "@vitejs/plugin-react": "5.1.1",
     "typescript": "5.9.3",
     "vite": "7.2.2",
-    "@types/three": "0.187.0"
+    "@types/three": "0.187.0",
+    "playwright-core": "1.56.1"
   },
   "engines": {
     "node": ">=22"

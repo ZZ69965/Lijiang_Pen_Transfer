@@ -44,9 +44,21 @@ export const WALKWAY: readonly FootlinePoint[] = [
   { x: 2104, y: 460, review: 'checked' },
 ];
 
-/** Native world-pixel height of the standing figure (song pose is slightly taller). */
-export const HERO_HEIGHT = 116;
-export const HERO_SONG_HEIGHT = 127;
+/**
+ * Figure scale — ONE uniform world-pixels-per-image-pixel factor for every pose.
+ *
+ * The five poses are drawings of the same character at the same pixel scale, so
+ * they must be scaled identically. Scaling each pose to a fixed *world height*
+ * would do the opposite: `hero-walk.webp` is a wide stride (texture 809×1413
+ * vs the standing 523×1536), so forcing it to the same height enlarged that
+ * figure by ~9% and the pose visibly "grew" the moment walking began.
+ *
+ * With a uniform factor the body keeps a constant size, and only the bounding
+ * box height changes because a stride is shorter than standing — as drawn.
+ */
+export const HERO_REFERENCE_PIXEL_HEIGHT = 1536; // native height of hero-front.webp
+export const HERO_HEIGHT = 116; // world height of that standing reference pose
+export const HERO_SCALE = HERO_HEIGHT / HERO_REFERENCE_PIXEL_HEIGHT;
 
 /** Keep the walker inside the painted river bank. */
 export const HERO_MIN_X = 55;

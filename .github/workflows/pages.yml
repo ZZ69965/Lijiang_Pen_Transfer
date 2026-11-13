@@ -27,8 +27,8 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Install dependencies
-        run: npm install --no-audit --no-fund
+      - name: Install dependencies (locked)
+        run: npm ci --no-audit --no-fund
       - name: Verify artwork native sizes and lossless encoding
         run: npm run verify:assets
       - name: Test interaction time slots and story manifest

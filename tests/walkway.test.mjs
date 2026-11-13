@@ -1,7 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  WALKWAY, footlineReviewAt, walkwayY, clampHeroX, HERO_HEIGHT, HERO_SONG_HEIGHT,
+  WALKWAY, footlineReviewAt, walkwayY, clampHeroX, HERO_HEIGHT, HERO_SCALE,
+  HERO_REFERENCE_PIXEL_HEIGHT,
 } from '../src/content/walkway.ts';
 import { WORLD_WIDTH, PLACES } from '../src/content/places.ts';
 
@@ -57,5 +58,6 @@ test('hero stays inside the painted bank and keeps native pixel height', () => {
   assert.equal(clampHeroX(1000), 1000);
   // Heights remain near-native: art is never re-scaled into a blurry sprite.
   assert.ok(HERO_HEIGHT >= 100 && HERO_HEIGHT <= 130);
-  assert.ok(HERO_SONG_HEIGHT > HERO_HEIGHT, 'song pose is slightly taller');
+  assert.ok(HERO_SCALE > 0 && HERO_SCALE < 0.2, 'source art is downscaled only to world scale');
+  assert.equal(HERO_SCALE, HERO_HEIGHT / HERO_REFERENCE_PIXEL_HEIGHT);
 });

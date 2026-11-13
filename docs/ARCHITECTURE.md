@@ -25,7 +25,8 @@ ScrollEngine.ts [Pixi Application + 世界坐标 + 相机 + 角色 + 水纹 + �
 - 主页使用 `<img>` + CSS object-fit:cover 作为宣传封面；进入场景后 Pixi 保持原图宽高比。
 - 背景切换**直接替换独立昼/夕/夜绘制**，通过 alpha 交叠过渡，不用 Tint 冒充独立画卷。
 - Hero sprite `anchor=(0.5,1)` 脚底锚点；人物仅是关键姿态。后续使用正式 Atlas 的逐帧动画取代。
-- 角色站在人工测定的临时步道曲线上，当前不实现严谨遮挡和地形碰撞。
+- 角色站在人工测定的临时步道曲线上（`src/content/walkway.ts`），分段标注 `checked/pending`；阳桥段标记 `foreground: true`，等待桥栏前景层。仍不实现严谨遮挡和地形碰撞。
+- 五张姿态共用同一缩放系数 `HERO_SCALE`，切换姿态时人物大小不变。
 - 静态资源为全分辨率 lossless WebP；显示加载状态，不在仓库提交任何低质量预览版。
 - Pixi 实例创建一次，React StrictMode 下允许组件销毁/重建；input 监听按生命周期清理。
 - `prefers-reduced-motion` 关掉人物弹跳和淡入的平滑运动。
@@ -51,6 +52,28 @@ ScrollEngine.ts [Pixi Application + 世界坐标 + 相机 + 角色 + 水纹 + �
 `src/content/encounters.ts` 的每个热点包含 `spriteFile / spriteWidth / worldX / worldY`。引擎加载原有无损背景和人物后即可进入场景；四张次要透明插画随后通过 `Promise.all(... Assets.load)` 异步加载，单张出错只保留可用热区，不产生黑屏。
 
 夜间独立音频控制器 `src/engine/NightMusic.ts` 在 React 用户真实点击后才创建 `AudioContext → MediaElementSource → AnalyserNode → destination`；`ScrollEngine.tick` 读取 `sampleEnergy()`，不通过 React 60FPS 更新状态。`NightEffects` 在 music=true 时取消程序化节拍、改用真实 FFT 值。停播/退出夜景清零能量，默认静音并尊重减少动画偏好。
+
+## 加载、快照与输入所有权（M0.5，2026-11-13）
+
+```text
+src/content/assets.ts    planAssets(time)：critical = 当前画卷 + 正面/行走（夜间加对山歌）
+                         deferred  = 其余画卷与姿态；resolvePose() 提供姿态回退
+src/content/walkway.ts   脚底线与 HERO_SCALE（统一缩放）；每段标注 checked / pending / foreground
+src/content/viewport.ts  fitZoom / clampLeft / resizeCamera：旋转保留世界中心
+src/content/snapshot.ts  SceneSnapshot + readSnapshot() 校验，只做同次访问内恢复
+src/content/market.ts    鱼市状态机（纯函数，非法动作返回同一对象）
+src/content/async.ts     AsyncEpoch（过期异步结果）与 AudioIntentQueue（播放竞态）
+src/engine/ScrollEngine  纹理缓存、后台预取、加载状态回调、输入锁、capture/restoreView
+src/app/ScrollStage      forwardRef 暴露 captureView()，供进入过场前抓取快照
+src/app/FishMarket       只看阶段 UI，逻辑全在 content/market.ts
+```
+
+规则：
+
+- `onReady` 只等当前画卷；非关键资源失败写入 `failedLabels`，**不得**进入 `onError`。
+- 切换时辰时若目标画卷未到，**保留当前画卷**继续显示，绝不淡入空白画布。
+- 输入所有权唯一：`inputLocked`（对话/指南/过场）时引擎清空按键与指针并拒绝新行走。
+- 快照只存"位置与结果"，从不保存"正在按住行走"或"正在播放"。
 
 ## 独立 Three.js 场景（M0.4）
 
