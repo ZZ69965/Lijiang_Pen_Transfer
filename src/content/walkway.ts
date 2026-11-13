@@ -10,11 +10,13 @@
  * Every point below was re-measured against `scene-day.webp` on a 2× grid
  * overlay, by locating the actual painted stone platform edge:
  *
- *   象鼻山 island   x ≈ 30–490    platform edge y ≈ 520–530   (island only)
- *   left bank       x ≈ 490–1150  stone revetment   y ≈ 512→505
- *   阳桥 deck       x ≈ 1150–1520 railing crown      y ≈ 400
+ *   象鼻山 island   x ≈ 30–490    rock, no bank — NOT walkable
+ *   left bank       x ≈ 500–1150  stone coping edge y ≈ 503–508
+ *      (balustrade crown at y≈478; the walker's feet belong on the stone edge,
+ *       not down in the water below it)
+ *   阳桥 deck       x ≈ 1150–1520 railing crown     y ≈ 400
  *      (a parapet stands in FRONT of anyone walking the deck → foreground)
- *   鱼市 / 江岸     x ≈ 1520–2100 stone platform    y ≈ 497
+ *   江岸 / 鱼市     x ≈ 1560–2100 stone coping      y ≈ 508
  *   玻璃桥          not walkable — it spans open water
  *
  * This is authoring data, not surveyed terrain. `review` keeps the honest
@@ -42,10 +44,10 @@ export type FootlinePoint = {
  * part of it: there is no painted land there to stand on.
  */
 export const WALKWAY: readonly FootlinePoint[] = [
-  { x: 505, y: 514, review: 'checked' },
-  { x: 700, y: 511, review: 'checked' },
-  { x: 900, y: 508, review: 'checked' },
-  { x: 1060, y: 505, review: 'checked' },
+  { x: 505, y: 506, review: 'checked' },
+  { x: 700, y: 505, review: 'checked' },
+  { x: 900, y: 505, review: 'checked' },
+  { x: 1050, y: 504, review: 'checked' },
   { x: 1150, y: 496, review: 'checked' },
   // Bridge ascent: the painted parapet stands in front of the deck walker.
   { x: 1230, y: 462, review: 'pending', foreground: true },
@@ -53,10 +55,10 @@ export const WALKWAY: readonly FootlinePoint[] = [
   { x: 1340, y: 400, review: 'pending', foreground: true },
   { x: 1420, y: 412, review: 'pending', foreground: true },
   { x: 1500, y: 462, review: 'pending', foreground: true },
-  { x: 1560, y: 494, review: 'checked' },
-  { x: 1700, y: 497, review: 'checked' },
-  { x: 1850, y: 497, review: 'checked' },
-  { x: 2050, y: 494, review: 'checked' },
+  { x: 1560, y: 500, review: 'checked' },
+  { x: 1700, y: 508, review: 'checked' },
+  { x: 1850, y: 508, review: 'checked' },
+  { x: 2050, y: 506, review: 'checked' },
 ];
 
 /** Land the walker can actually stand on, as world-X ranges. */
