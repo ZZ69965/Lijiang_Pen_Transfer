@@ -4,7 +4,7 @@ import {
   WALKWAY, WALKABLE_SPANS, footlineReviewAt, walkwayY, clampHeroX, isWalkable,
   HERO_HEIGHT, HERO_SCALE, HERO_REFERENCE_PIXEL_HEIGHT, HERO_MIN_X, HERO_MAX_X,
 } from '../src/content/walkway.ts';
-import { WORLD_WIDTH, PLACES } from '../src/content/places.ts';
+import { WORLD_WIDTH, WORLD_HEIGHT, PLACES } from '../src/content/places.ts';
 
 test('footline is monotonic in X so the walker never walks backwards into the painting', () => {
   for (let i = 1; i < WALKWAY.length; i += 1) {
@@ -96,4 +96,17 @@ test('hero height is calibrated to the painted architecture, not chosen freely',
   assert.equal(HERO_HEIGHT, 96);
   assert.ok(HERO_SCALE > 0 && HERO_SCALE < 0.2, 'source art is downscaled only to world scale');
   assert.equal(HERO_SCALE, HERO_HEIGHT / HERO_REFERENCE_PIXEL_HEIGHT);
+});
+
+test('each landmark carries a framed zoom and a waterline for local motion', () => {
+  for (const place of PLACES) {
+    // Framing zoom stays near the fit scale: tighter frames the subject, and the
+    // engine floors it at "painting fills the viewport" so no cream margins show.
+    assert.ok(place.zoom >= 0.9 && place.zoom <= 1.3, `${place.id} zoom=${place.zoom}`);
+    // Ambient shimmer must sit on water that is at or below the standing ground,
+    // never up in the mountains.
+    const ground = walkwayY(place.standX);
+    assert.ok(place.waterY >= ground, `${place.id} water ${place.waterY} is below ground ${ground}`);
+    assert.ok(place.waterY <= WORLD_HEIGHT - 20, `${place.id} waterline stays above the scroll edge`);
+  }
 });

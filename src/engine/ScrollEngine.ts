@@ -4,7 +4,7 @@ import { NightEffects, type NightControls } from './NightEffects';
 import type { NightMusic } from './NightMusic';
 import {
   PLACES, WORLD_HEIGHT, WORLD_WIDTH, artworkForTime,
-  type ArtworkVariant, type PlaceId, type TimeOfDay, type VisitMode,
+  type ArtworkVariant, type Place, type PlaceId, type TimeOfDay, type VisitMode,
 } from '../content/places';
 import {
   ALL_ASSETS, assetKey, planAssets, resolvePose, type Pose, type PlannedAsset,
@@ -92,6 +92,10 @@ export class ScrollEngine {
    * ("人物随行") shows the figure and the walking controls.
    */
   private walkerVisible = true;
+  /** Subject the ambient water shimmer currently belongs to. */
+  private ambientPlace: Place | null = null;
+  private readonly ambientLayer = new Graphics();
+  private zoomInitial = 1;
   private contactShadow: Sprite | null = null;
   private time: TimeOfDay = 'morning';
   private nightControls: NightControls = { view: 'shore', lights: false, rhythm: false, music: false, drones: false };
@@ -221,6 +225,7 @@ export class ScrollEngine {
     this.addMarkers();
     this.addEncounterMarkers();
     this.world.addChild(this.nightEffects.graphics);
+    this.world.addChild(this.ambientLayer);
     this.world.addChild(this.markers);
     this.world.addChild(this.encounterLayer);
     this.updateEncounterVisibility();
@@ -560,6 +565,7 @@ export class ScrollEngine {
 
   private fitInitialView(): void {
     this.zoom = clampZoom(fitZoom(this.viewSize), this.viewSize);
+    this.zoomInitial = this.zoom;
     const limits = zoomBounds(this.viewSize);
     this.zoomMinimum = limits.minimum;
     this.zoomMaximum = limits.maximum;
@@ -636,12 +642,33 @@ export class ScrollEngine {
    */
   focusPlace(id: PlaceId, instant = false): void {
     const place = PLACES.find((p) => p.id === id) ?? PLACES[0];
+    // Per-subject framing: a wide view would leave 象鼻山 as a small rock in the
+    // corner. Clamped to the same bounds the visitor's own zoom obeys.
+    if (Number.isFinite(place.zoom) && this.zoomMaximum > 0) {
+      // Never frame below "the painting fills the viewport", or cream margins
+      // appear around the artwork — the scroll must always cover the stage.
+      const fill = Math.max(
+        this.viewSize.width / WORLD_WIDTH,
+        this.host.clientHeight / WORLD_HEIGHT,
+      );
+      const floor = Math.max(this.zoomMinimum, Math.min(this.zoomMaximum, fill));
+      const framed = Math.max(floor, Math.min(this.zoomMaximum, this.zoomInitial * place.zoom));
+      if (Math.abs(framed - this.zoom) > 0.001) {
+        this.zoom = framed;
+        if (instant) this.applyCamera();
+      }
+    }
+    this.ambientPlace = place;
     this.cameraTarget = place.worldX - this.viewSize.width / (2 * this.zoom);
     if (instant) { this.cameraLeft = this.cameraTarget; this.cameraTarget = null; this.applyCamera(); }
     // Only the guided "人物随行" mode moves the walker; free mode stays looking.
     if (this.mode === 'guided' && !instant && this.walkerVisible) {
       this.destination = clampHeroX(place.standX);
     }
+    // The figure looks AT the subject it was asked to visit, even when it stands
+    // well to the side of it (象鼻山 is watched across the water).
+    if (this.walkerVisible && place.worldX < this.heroX) this.facing = -1;
+    else if (this.walkerVisible && place.worldX > this.heroX) this.facing = 1;
     if (this.mode === 'free') {
       this.heroX = clampHeroX(place.standX);
       this.action = null;
@@ -809,6 +836,7 @@ export class ScrollEngine {
       this.applyCamera();
     }
 
+    this.drawAmbient();
     this.ripplesLayer.clear();
     this.ripples = this.ripples.filter((r) => r.age < 1.9);
     for (const ripple of this.ripples) {
@@ -820,6 +848,28 @@ export class ScrollEngine {
       }
     }
   };
+
+  /**
+   * One restrained local motion per subject: a slow shimmer on the water in
+   * front of the painting's own subject. It never touches the artwork's pixels
+   * (separate Graphics layer) and is skipped entirely for reduced motion, so a
+   * static screenshot is the same as the resting state.
+   */
+  private drawAmbient(): void {
+    this.ambientLayer.clear();
+    if (!this.ready || this.reducedMotion) return;
+    const place = this.ambientPlace;
+    if (!place) return;
+    const night = this.time === 'night';
+    const drift = Math.sin(this.elapsed * 0.55);
+    for (let i = 0; i < 3; i += 1) {
+      const spread = 46 + i * 22;
+      const x = place.worldX + drift * (6 + i * 5) + (i - 1) * 26;
+      const y = place.waterY - 4 + i * 7 + Math.sin(this.elapsed * 0.8 + i) * 1.2;
+      this.ambientLayer.ellipse(x, y, spread, 2.1)
+        .fill({ color: night ? 0xffd9a0 : 0xf6f0dc, alpha: (night ? 0.05 : 0.075) + i * 0.012 });
+    }
+  }
 }
 
 function assetLabel(asset: PlannedAsset): string {
