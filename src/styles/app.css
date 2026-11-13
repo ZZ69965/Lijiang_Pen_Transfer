@@ -592,3 +592,161 @@
 /* 三维不可用时的退路：首要动作是回到原画卷，回卷首为次要动作 */
 .elephant-fallback {flex-direction:column;gap:10px}
 .elephant-fallback .elephant-fallback-home {background:transparent;color:#5d6f55;border:1px solid #8d9b70;padding:9px 20px;font-size:12px}
+
+/* ==========================================================================
+   R2 · 2026-11-13 — 三层层级：顶边（返回/时辰/更多）、底边一条路线、按需上下文。
+   本节整体取代上方多轮叠加的常驻布局规则，最后加载、优先级最高。
+   ========================================================================== */
+
+/* --- 视口：横屏矮屏不再被 min-height 挤出屏幕 --------------------------- */
+.home,.experience{min-height:0;height:100dvh;height:100svh}
+@supports (height:100dvh){.home,.experience{height:100dvh}}
+
+/* --- 顶边 ---------------------------------------------------------------- */
+.scene-header{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:10px;
+  padding:12px 18px 26px;background:linear-gradient(180deg,rgba(238,226,198,.5),transparent);pointer-events:none}
+.scene-header>*{pointer-events:auto}
+.back-button{min-width:44px;min-height:44px;padding:0;display:grid;place-items:center;
+  font-size:18px;background:#f7eedbd9;border:1px solid #bda57c;border-radius:999px}
+.scene-header .scene-time{position:static;justify-self:center}
+.scene-header .time-switcher{background:#f7eedbd9;border:1px solid #bda57c;border-radius:999px;padding:3px}
+.scene-header .time-switcher button{min-height:38px;padding:8px 15px;font-size:13px;border-radius:999px}
+.more-wrap{position:relative;justify-self:end}
+.info-button{min-height:44px;padding:0 16px;font-size:13px;letter-spacing:.06em;
+  background:#f7eedbd9;border:1px solid #bda57c;border-radius:999px}
+.more-menu,.story-menu{position:absolute;z-index:9;display:flex;flex-direction:column;gap:2px;min-width:190px;
+  padding:6px;background:#fbf5e6f2;border:1px solid #c0a77e;border-radius:10px;
+  box-shadow:0 12px 30px #3d2c1622;backdrop-filter:blur(10px)}
+.more-menu{top:calc(100% + 8px);right:0}
+.more-menu button,.story-menu button{min-height:44px;padding:10px 12px;text-align:left;border:0;border-radius:7px;
+  background:transparent;color:#54422c;font-size:14px;letter-spacing:.02em}
+.more-menu button:hover,.story-menu button:hover{background:#eadfc4}
+
+/* --- 画中故事：一个按需入口 --------------------------------------------- */
+.story-entry{position:absolute;top:96px;right:18px;z-index:4}
+.story-entry>button{min-height:44px;padding:0 16px;font-size:13px;letter-spacing:.08em;
+  background:#f7eedbd9;border:1px solid #bda57c;border-radius:999px;color:#5c4830}
+.story-entry>button span{margin-left:7px;font:11px Georgia,serif;color:#a17d51}
+.story-menu{top:calc(100% + 8px);right:0}
+.story-menu button{display:flex;flex-direction:column;gap:2px}
+.story-menu strong{font-weight:500;font-size:14px}
+.story-menu small{font-size:11px;color:#8a7355}
+
+/* --- 景点说明卡：只在需要时出现，一次只有它或故事卡 ---------------------- */
+.place-card{top:96px;left:18px;bottom:auto;width:min(320px,calc(100vw - 36px));z-index:5;
+  padding:18px 20px;background:#fbf5e6f5;border:1px solid #c0a77e;border-radius:12px;
+  box-shadow:0 14px 34px #3d2c1626;backdrop-filter:blur(10px)}
+.place-card h2{font-size:24px;letter-spacing:.12em;margin:6px 0 8px}
+.place-card p{font-size:14px;line-height:1.85;color:#5b4a34}
+.place-heading{font-size:12px;letter-spacing:.14em}
+.place-footer{margin-top:14px}
+.place-footer button{min-height:44px;padding:0 16px;font-size:13px;border-radius:8px}
+.place-card .encounter-close{position:absolute;top:8px;right:8px;width:44px;height:44px}
+
+/* --- 底边：一条路线，人物出现时才多出走位 ------------------------------- */
+.scene-landmarks{left:50%;right:auto;bottom:18px;transform:translateX(-50%);
+  background:#f7eedbe6;border:1px solid #bda57c;border-radius:999px;padding:4px;gap:2px;
+  box-shadow:0 8px 24px #2d210f14;backdrop-filter:blur(8px);max-width:calc(100vw - 32px)}
+.scene-landmarks button{min-height:44px;padding:0 14px;border-radius:999px;gap:6px}
+.scene-landmarks strong{font-size:14px;letter-spacing:.06em}
+.scene-landmarks small{font-size:11px}
+.control-walk{position:absolute;left:18px;bottom:18px;z-index:3}
+.control-view{position:absolute;right:18px;bottom:18px;z-index:3}
+.control-walk button,.control-view button{width:44px;height:44px;min-width:44px;min-height:44px;
+  border-radius:999px;font-size:18px;background:#f7eedbe6;border:1px solid #bda57c}
+/* 进度条去重：路线已表达当前景，这里只留一条极细的位置线 */
+.scroll-progress{left:0;right:0;bottom:0;z-index:1;max-width:none;padding:0;pointer-events:none}
+.progress-track{height:2px;background:#0000001a}
+.progress-track i{background:#6f583e99}
+
+/* --- 卡片正文尺寸：不再靠 8–10px 塞内容 --------------------------------- */
+.encounter-sheet{max-height:min(62vh,520px);overflow-y:auto;overscroll-behavior:contain;
+  font-size:14px;line-height:1.8}
+.encounter-sheet h3{font-size:20px}
+.night-note,.encounter-disclaimer{font-size:12px;line-height:1.75}
+.market-line{margin:0 0 12px;padding:12px 14px;border-left:3px solid #a78054;border-radius:0 8px 8px 0;
+  background:#fff8e9;font-size:14px;line-height:1.8;color:#58452c}
+.market-kinds{display:grid;gap:8px;margin-bottom:10px}
+.market-kind{display:flex;flex-direction:column;gap:3px;min-height:52px;padding:10px 13px;
+  border:1px solid #c3ab84;border-radius:9px;background:#fffcf1;text-align:left}
+.market-kind.picked{background:#e6edd8;border-color:#7d9160}
+.market-kind strong{font-size:14px;font-weight:500}
+.market-kind small{font-size:12px;color:#7b755a}
+.market-actions{display:grid;gap:8px;margin-top:6px}
+.market-main{min-height:44px;border-radius:9px;border:1px solid #5d7550;background:#5d7550;
+  color:#f8f1db;font-size:14px;letter-spacing:.04em}
+.market-main:disabled{opacity:.5;cursor:not-allowed}
+.market-cancel{min-height:44px;border-radius:9px;border:1px solid #c3ab84;background:transparent;
+  color:#7d6d52;font-size:14px}
+.night-lab{margin-top:10px;font-size:13px}
+.night-lab summary{min-height:44px;display:flex;align-items:center;cursor:pointer;color:#7a6a50}
+.night-lab button{display:block;width:100%;min-height:44px;margin-top:6px;border-radius:8px;
+  border:1px solid #c3ab84;background:#fffcf1;font-size:13px;text-align:left;padding:0 12px}
+.night-lab small{display:block;margin-top:8px;font-size:12px;line-height:1.7;color:#8a7c60}
+
+/* --- 手机竖屏 ----------------------------------------------------------- */
+@media(max-width:600px){
+  .scene-header{padding:8px 10px 18px}
+  .scene-header .time-switcher button{min-height:38px;padding:6px 10px;font-size:12px}
+  .info-button{padding:0 12px;font-size:12px}
+  .story-entry{top:88px;right:10px}
+  .place-card{top:88px;left:10px;right:10px;width:auto}
+  .scene-landmarks{left:8px;right:8px;transform:none;justify-content:space-between}
+  .scene-landmarks button{flex:1;flex-direction:column;gap:1px;padding:4px 2px;border-radius:10px}
+  .scene-landmarks strong{font-size:12px}
+  .scene-landmarks small{font-size:10px}
+  .control-walk{bottom:76px;left:10px}
+  .control-view{bottom:76px;right:10px}
+  .encounter-sheet{max-height:min(72vh,560px)}
+}
+
+/* --- 手机横屏（矮视口）：控件必须真的在屏内 ----------------------------- */
+@media(max-height:460px){
+  .home,.experience{min-height:0}
+  .scene-header{padding:6px 10px 14px}
+  .scene-header .time-switcher button{min-height:36px;padding:5px 9px;font-size:12px}
+  .back-button,.info-button{min-height:36px}
+  .story-entry{top:auto;bottom:66px;right:10px}
+  .story-menu{bottom:calc(100% + 6px);top:auto}
+  .place-card{top:56px;bottom:66px;left:10px;width:min(300px,46vw);overflow-y:auto;padding:12px 14px}
+  .place-card h2{font-size:19px}
+  .place-card p{font-size:13px;line-height:1.65}
+  .scene-landmarks{bottom:8px;padding:3px}
+  .scene-landmarks button{min-height:40px;padding:0 10px}
+  .scene-landmarks strong{font-size:12px}
+  .control-walk{bottom:8px;left:8px}
+  .control-view{bottom:8px;right:8px}
+  .control-walk button,.control-view button{width:40px;height:40px;min-width:40px;min-height:40px}
+  .encounter-sheet{top:46px;bottom:64px;max-height:none;overflow-y:auto}
+  .scene-load-note{display:none}
+}
+
+@media(prefers-reduced-motion:reduce){
+  .more-menu,.story-menu,.place-card,.encounter-sheet{backdrop-filter:none}
+}
+
+/* --- 首页：矮屏不再让页脚盖住主按钮 ------------------------------------- */
+.home{display:flex;flex-direction:column;overflow:hidden}
+.home-intro{flex:1 1 auto;min-height:0;overflow-y:auto;overscroll-behavior:contain;
+  margin:0 0 0 clamp(24px,7vw,140px);padding:8px 0 16px;display:flex;flex-direction:column;justify-content:center;gap:0}
+.home-bottom{flex:0 0 auto;position:relative;margin-top:0}
+.home-description{margin-bottom:18px}
+.home-actions button{min-height:56px}
+@media(max-height:520px){
+  .home-header{padding:8px 16px}
+  .home-brand{font-size:13px}
+  .seal{width:32px;height:32px;font-size:19px}
+  .home-eyebrow{display:none}
+  .home-intro{margin-left:16px;width:min(460px,calc(100vw - 32px));padding:4px 0 10px}
+  .home-intro h1{font-size:clamp(38px,7.4vh,56px);margin-bottom:6px}
+  .home-intro h1 span{font-size:16px;margin-top:4px;letter-spacing:.2em}
+  .home-verse{font-size:14px;margin:6px 0 10px}
+  .home-description{font-size:12px;line-height:1.6;margin-bottom:10px}
+  .home-actions{flex-direction:row;width:auto;gap:8px}
+  .home-actions button{min-height:44px;padding:8px 12px}
+  .home-actions button span:first-child{font-size:14px;letter-spacing:.08em}
+  .home-actions button small{display:none}
+  .home-bottom{padding:6px 16px 10px;min-height:0}
+  .home-route,.home-copyright{display:none}
+  .time-switcher button{min-height:32px;padding:5px 10px;font-size:12px}
+}

@@ -68,7 +68,7 @@ export function findMarketKind(kindId: string | null): MarketKind | null {
 const ALLOWED_FROM: Record<MarketAction['type'], readonly MarketStage[]> = {
   open: ['waiting', 'completed'],
   chat: ['waiting'],
-  'begin-picking': ['talking'],
+  'begin-picking': ['talking', 'waiting'],
   pick: ['picking'],
   'ask-confirm': ['picking'],
   confirm: ['confirming'],
@@ -113,9 +113,13 @@ export function applyMarketAction(session: MarketSession, action: MarketAction):
       }
       return next({ stage: 'waiting', reply: session.reply });
     case 'chat':
+      // R2: greeting the stallholder lands straight on the fish he is offering.
+      // `talking` used to need a second "看看篓里的渔获" click for no new choice,
+      // so the stage is skipped instead of adding a step. It stays in the union
+      // (and in `begin-picking`) for future dialogue that really needs a beat.
       return next({
-        stage: 'talking',
-        reply: '摊主：今日的渔获都在篓里，慢慢挑。品类与渔法资料还在核实，这里先按演示品类介绍。',
+        stage: 'picking',
+        reply: '摊主把竹篓往前推了推：「都在篓里，慢慢挑。品类与渔法资料还在核实，这里先按演示品类介绍。」',
       });
     case 'begin-picking':
       return next({ stage: 'picking', reply: '摊主：看看这两尾，哪一尾合你的心意？' });

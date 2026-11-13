@@ -29,6 +29,52 @@ const record = (name, ok, detail = '') => {
   results.push({ name, ok, detail });
   console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${detail ? ` — ${detail}` : ''}`);
 };
+/**
+ * Real reachability, not "the canvas exists": every listed control must have a
+ * box inside the viewport, and no pair of them may overlap. This is what the
+ * plan means by 控制矩形在 viewport 内 / 主要控件不重叠.
+ */
+async function reachability(page, selectors) {
+  const boxes = [];
+  for (const selector of selectors) {
+    const locator = page.locator(selector).first();
+    if (!(await locator.count())) { boxes.push({ name: selector, missing: true }); continue; }
+    const box = await locator.boundingBox();
+    boxes.push({ name: selector, ...(box ?? { missing: true }) });
+  }
+  const vp = page.viewportSize();
+  const outside = boxes.filter((b) => b.missing || b.x < -1 || b.y < -1 ||
+    b.x + b.width > vp.width + 1 || b.y + b.height > vp.height + 1);
+  const overlaps = [];
+  for (let i = 0; i < boxes.length; i += 1) {
+    for (let j = i + 1; j < boxes.length; j += 1) {
+      const a = boxes[i]; const b = boxes[j];
+      if (a.missing || b.missing) continue;
+      const dx = Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x);
+      const dy = Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y);
+      if (dx > 2 && dy > 2) overlaps.push(`${a.name} × ${b.name}`);
+    }
+  }
+  return { outside: outside.map((b) => b.name), overlaps };
+}
+
+/** The sheet must sit inside the viewport and scroll instead of overflowing. */
+async function readSheetMetrics(page) {
+  return page.evaluate(() => {
+    const sheet = document.querySelector('.encounter-sheet');
+    if (!sheet) return { fits: false, reason: 'missing' };
+    const box = sheet.getBoundingClientRect();
+    const overflow = sheet.scrollHeight - sheet.clientHeight;
+    const scrollable = getComputedStyle(sheet).overflowY !== 'visible';
+    return {
+      fits: box.top >= -1 && box.bottom <= window.innerHeight + 1 &&
+        (overflow <= 0 || scrollable),
+      top: Math.round(box.top), bottom: Math.round(box.bottom),
+      viewport: window.innerHeight, overflow, scrollable,
+    };
+  });
+}
+
 const shot = async (page, name) => {
   const file = join(outDir, `${name}.png`);
   await page.screenshot({ path: file });
@@ -113,42 +159,47 @@ try {
     // ------------------------------------------------------- fish market flow
     await page.locator('.scene-time .time-switcher button', { hasText: '正午' }).click();
     await page.waitForTimeout(900);
-    await page.getByRole('button', { name: /岸边鱼市/ }).first().click();
+    // Stories now live behind one entry instead of a resident rail.
+    await page.locator('.story-entry > button').click();
+    await page.locator('.story-menu button', { hasText: '鱼市' }).first().click();
     await page.waitForSelector('.market-flow');
     await shot(page, 'desktop-04-market-waiting');
 
-    const stepState = async () => page.locator('.market-steps li.current').innerText();
-    record('market opens at 等待', (await stepState()).includes('等待'));
+    // R2 removed the five-step bar: states are internal, the stallholder's
+    // line and the available choices are what the visitor actually sees.
+    const marketLine = async () => (await page.locator('.market-line').innerText()).replace(/\s+/g, ' ');
+    record('market opens with the stallholder speaking and no step bar',
+      (await page.locator('.market-steps').count()) === 0 && (await marketLine()).length > 0,
+      (await marketLine()).slice(0, 30));
 
-    await page.getByRole('button', { name: '向摊主打听今日渔获' }).click();
-    record('交谈 after chatting', (await stepState()).includes('交谈'));
-    await page.getByRole('button', { name: '看看篓里的渔获' }).click();
-    record('挑选 after browsing', (await stepState()).includes('挑选'));
+    await page.getByRole('button', { name: '和摊主说话' }).click();
+    record('one click moves to the fish choices', (await page.locator('.market-kind').count()) === 2,
+      await marketLine());
     await page.getByRole('button', { name: /一尾大鱼/ }).click();
     await shot(page, 'desktop-05-market-picking');
-    await page.getByRole('button', { name: /确认带走/ }).click();
-    record('确认 after requesting confirmation', (await stepState()).includes('确认'));
+    await page.getByRole('button', { name: /就要一尾大鱼/ }).click();
+    record('confirmation asks before taking the fish', /确认带走/.test(await marketLine()));
     await shot(page, 'desktop-06-market-confirm');
 
     // double click the same confirm button: only one completion may happen
     const confirm = page.getByRole('button', { name: /确认带走（一尾大鱼）/ });
     await confirm.dblclick();
     await page.waitForTimeout(400);
-    record('完成 after confirming', (await stepState()).includes('完成'));
-    const reply = await page.locator('.market-reply').innerText();
+    record('completion is visible in the stallholder line', /演示交易完成/.test(await marketLine()));
+    const reply = await marketLine();
     record('completion reply names the fish exactly once', (reply.match(/一尾大鱼/g) || []).length >= 1 && /演示交易完成/.test(reply), reply.slice(0, 40));
-    const seq = await page.locator('.market-reply').getAttribute('data-sequence');
+    const seq = await page.locator('.market-line').getAttribute('data-sequence');
     await page.waitForTimeout(300);
-    record('double click did not submit twice', seq === await page.locator('.market-reply').getAttribute('data-sequence'), `sequence=${seq}`);
+    record('double click did not submit twice', seq === await page.locator('.market-line').getAttribute('data-sequence'), `sequence=${seq}`);
     await shot(page, 'desktop-07-market-completed');
 
     // same-visit revisit: the completed purchase is remembered
-    await page.getByRole('button', { name: '再看看别的渔获' }).click();
+    await page.getByRole('button', { name: '再看看别的' }).click();
     await page.waitForTimeout(300);
     const record1 = await page.locator('.market-record').innerText().catch(() => '');
     record('same-visit revisit shows the previous purchase', /一尾大鱼/.test(record1), record1.replace(/\s+/g, ' '));
-    record('revisit restarts at 等待 rather than replaying the purchase', (await stepState()).includes('等待'));
-    await page.getByRole('button', { name: /一尾小鱼|向摊主打听/ }).first().click();
+    record('revisit restarts at the stallholder rather than replaying the purchase',
+      (await page.locator('.market-kind').count()) === 0 && (await marketLine()).length > 0);
     await page.waitForTimeout(200);
     await page.getByRole('button', { name: '关闭互动' }).click();
 
@@ -158,23 +209,25 @@ try {
     await page.waitForSelector('.scroll-canvas');
     await page.waitForFunction(() => !document.querySelector('.scene-loading'));
     await page.locator('.scene-time .time-switcher button', { hasText: '正午' }).click();
-    await page.getByRole('button', { name: /岸边鱼市/ }).first().click();
+    await page.locator('.story-entry > button').click();
+    await page.locator('.story-menu button', { hasText: '鱼市' }).first().click();
     await page.waitForSelector('.market-flow');
     // a fresh page has no memory across reloads (same-visit only, per plan)
-    record('no false purchase after reload (session-only memory)', (await stepState()).includes('等待'));
+    record('no false purchase after reload (session-only memory)',
+      (await page.locator('.market-kind').count()) === 0 && (await page.locator('.market-record').count()) === 0);
 
     // cancel path
-    await page.getByRole('button', { name: '向摊主打听今日渔获' }).click();
-    await page.getByRole('button', { name: '看看篓里的渔获' }).click();
+    await page.getByRole('button', { name: '和摊主说话' }).click();
     await page.getByRole('button', { name: /一尾小鱼/ }).click();
     await page.getByRole('button', { name: '暂不买了' }).click();
-    record('cancel returns to 等待', (await stepState()).includes('等待'));
-    record('cancel shows visible feedback', /放回篓/.test(await page.locator('.market-reply').innerText()));
+    record('cancel returns to the stallholder', (await page.locator('.market-kind').count()) === 0);
+    record('cancel shows visible feedback', /放回篓/.test(await marketLine()));
     await shot(page, 'desktop-08-market-cancelled');
     await page.getByRole('button', { name: '关闭互动' }).click();
 
     // ------------------------------------------------- input ownership checks
-    await page.getByRole('button', { name: /游目指南/ }).click();
+    await page.getByRole('button', { name: '更多' }).click();
+    await page.getByRole('menuitem', { name: '游目指南' }).click();
     await page.keyboard.down('ArrowRight');
     await page.waitForTimeout(500);
     await page.keyboard.up('ArrowRight');
@@ -199,7 +252,8 @@ try {
     await page.locator('.scene-landmarks button', { hasText: '玻璃桥' }).click();
     await page.waitForTimeout(1200);
     const progressBefore = await page.locator('.scroll-progress').getAttribute('aria-label');
-    await page.getByRole('button', { name: /卷尾/ }).click();
+    await page.getByRole('button', { name: '更多' }).click();
+    await page.getByRole('menuitem', { name: /卷尾/ }).click();
     await page.waitForSelector('.elephant-variant-finale', { timeout: 20000 });
     await shot(page, 'desktop-09-finale');
     // This headless environment has no WebGL; the finale must therefore offer a
@@ -223,7 +277,8 @@ try {
     // ------------------------------------------------------- audio lifecycle
     await page.locator('.scene-time .time-switcher button', { hasText: '入夜' }).click();
     await page.waitForTimeout(1200);
-    await page.getByRole('button', { name: /夜游|江上夜游|夜航/ }).first().click();
+    await page.locator('.story-entry > button').click();
+    await page.locator('.story-menu button', { hasText: '夜游' }).first().click();
     await page.waitForSelector('.night-music-button', { timeout: 15000 });
     const musicLabel = async () => (await page.locator('.night-music-button').innerText()).replace(/\s+/g, ' ');
     await page.locator('.night-music-button').click();
@@ -234,17 +289,42 @@ try {
       document.dispatchEvent(new Event('visibilitychange'));
     });
     await page.waitForTimeout(700);
-    record('hiding the page stops the music', /播放/.test(await musicLabel()), await musicLabel());
+    // The resume affordance is "开始听江夜游" once audio has been stopped.
+    record('hiding the page stops the music', /开始/.test(await musicLabel()), await musicLabel());
     await page.evaluate(() => {
       Object.defineProperty(document, 'hidden', { value: false, configurable: true });
       document.dispatchEvent(new Event('visibilitychange'));
     });
     await page.waitForTimeout(600);
-    record('returning to the page does not resume sound', /播放/.test(await musicLabel()), await musicLabel());
+    record('returning to the page does not resume sound', /开始/.test(await musicLabel()), await musicLabel());
     await shot(page, 'desktop-08b-night-music-stopped');
+    record('concept demos are not resident in the night panel',
+      (await page.locator('.night-lab[open]').count()) === 0 &&
+      (await page.locator('.night-actions > button').count()) === 1,
+      `always-visible night buttons: ${await page.locator('.night-actions > button').count()}`);
     await page.getByRole('button', { name: '关闭互动' }).click();
     await page.locator('.scene-time .time-switcher button', { hasText: '正午' }).click();
     await page.waitForTimeout(600);
+
+    // ------------------------------------------------------- reachability
+    const controls = ['.back-button', '.scene-header .time-switcher', '.more-wrap',
+      '.story-entry', '.scene-landmarks', '.control-view'];
+    const reach = await reachability(page, controls);
+    record('desktop: every resident control is inside the viewport', reach.outside.length === 0, reach.outside.join(', '));
+    record('desktop: resident controls do not overlap each other', reach.overlaps.length === 0, reach.overlaps.join(', '));
+    record('desktop: no resident place card, step bar or story rail by default',
+      (await page.locator('.place-card').count()) === 0 &&
+      (await page.locator('.market-steps').count()) === 0 &&
+      (await page.locator('.encounter-rail').count()) === 0);
+
+    // one card at a time: opening a story closes the place card
+    await page.locator('.scene-landmarks button[aria-current="location"]').click();
+    record('tapping the current place opens exactly one card', (await page.locator('.place-card').count()) === 1);
+    await page.locator('.story-entry > button').click();
+    await page.locator('.story-menu button').first().click();
+    record('opening a story closes the place card (never two cards)',
+      (await page.locator('.place-card').count()) === 0 && (await page.locator('.encounter-sheet').count()) === 1);
+    await page.getByRole('button', { name: '关闭互动' }).click();
 
     // -------------------------------------------------------- rotation check
     const before = await page.locator('.scroll-progress').getAttribute('aria-label');
@@ -264,6 +344,18 @@ try {
     await enterFree(page);
     await page.waitForFunction(() => !document.querySelector('.scene-loading'));
     await shot(page, 'phone-landscape-01-painting');
+    const landReach = await reachability(page, ['.back-button', '.scene-header .time-switcher',
+      '.more-wrap', '.story-entry', '.scene-landmarks', '.control-view']);
+    record('phone landscape: all controls inside the 844x390 viewport', landReach.outside.length === 0, landReach.outside.join(', '));
+    record('phone landscape: controls do not overlap', landReach.overlaps.length === 0, landReach.overlaps.join(', '));
+    // and they must be actually clickable, not just present
+    await page.locator('.scene-landmarks button').nth(2).click();
+    await page.waitForTimeout(700);
+    record('phone landscape: the route is genuinely clickable',
+      (await page.locator('.scene-landmarks button[aria-current="location"]').innerText()).includes('阳桥'));
+    const tap = await page.locator('.back-button').boundingBox();
+    record('phone landscape: controls meet the 44px touch target',
+      tap.width >= 40 && tap.height >= 36, `${Math.round(tap.width)}×${Math.round(tap.height)}`);
     await page.locator('.scene-time .time-switcher button', { hasText: '入夜' }).click();
     await page.waitForTimeout(1500);
     await shot(page, 'phone-landscape-02-night');
@@ -280,11 +372,19 @@ try {
     await page.waitForFunction(() => !document.querySelector('.scene-loading'));
     await shot(page, 'phone-portrait-02-painting');
     await page.locator('.scene-time .time-switcher button', { hasText: '正午' }).click();
-    await page.getByRole('button', { name: /岸边鱼市/ }).first().click();
+    await page.locator('.story-entry > button').click();
+    await page.locator('.story-menu button', { hasText: '鱼市' }).first().click();
     await page.waitForSelector('.market-flow');
-    await page.getByRole('button', { name: '向摊主打听今日渔获' }).click();
-    await page.getByRole('button', { name: '看看篓里的渔获' }).click();
+    await page.getByRole('button', { name: '和摊主说话' }).click();
     await shot(page, 'phone-portrait-03-market');
+    const portReach = await reachability(page, ['.back-button', '.more-wrap', '.scene-landmarks']);
+    record('phone portrait: resident controls stay inside the viewport', portReach.outside.length === 0, portReach.outside.join(', '));
+    const sheet = await readSheetMetrics(page);
+    record('phone portrait: the dialogue card fits and scrolls internally', sheet.fits, JSON.stringify(sheet));
+    // closing returns focus to a usable control
+    await page.getByRole('button', { name: '关闭互动' }).click();
+    const focused = await page.evaluate(() => document.activeElement?.className || '');
+    record('closing the card returns focus to a real control', await page.evaluate(() => document.activeElement?.tagName === 'BODY' || document.activeElement?.tagName === 'BUTTON'), focused);
     record('no uncaught page errors (phone portrait)', errors.length === 0, errors.slice(0, 2).join(' | '));
     await context.close();
   }

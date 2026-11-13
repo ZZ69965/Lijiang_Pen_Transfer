@@ -54,6 +54,10 @@ export default function App() {
   const [snapshot, setSnapshot] = useState<SceneSnapshot | null>(null);
   const stageRef = useRef<StageHandle | null>(null);
   const [loadStatus, setLoadStatus] = useState<LoadStatus | null>(null);
+  // R2: only one card may be open at a time, and nothing is resident by default.
+  const [placeCard, setPlaceCard] = useState(false);
+  const [storyOpen, setStoryOpen] = useState(false);
+  const [more, setMore] = useState(false);
   const [previewId, setPreviewId] = useState<EncounterId>('cormorant');
   const [previewNumber, setPreviewNumber] = useState(0);
   const [place, setPlace] = useState<PlaceId>('elephant');
@@ -135,12 +139,17 @@ export default function App() {
   };
 
   const selectTime = (next: TimeOfDay) => {
+    setMore(false);
+    setStoryOpen(false);
+    setPlaceCard(false);
     if (next !== 'night') silenceMusic();
     setTime(next);
     closeEncounter();
   };
 
   const openEncounter = (id: EncounterId) => {
+    setPlaceCard(false);
+    setStoryOpen(false);
     const encounter = findEncounter(id);
     if (encounter.time !== time) return;
     if (activeEncounter === id) {
@@ -192,15 +201,16 @@ export default function App() {
    * drops any held walk and closes the story card first, so the guided camera
    * is not fought over by two inputs at once.
    */
+  const stories = encountersFor(time);
+
   const navigatePlace = (id: PlaceId) => {
     setWalking(0);
     setPlace(id);
+    // Exactly one card at a time: switching place closes the story and the
+    // description, and the description reopens on demand from the route.
+    setPlaceCard(false);
+    setStoryOpen(false);
     if (activeEncounter) closeEncounter();
-  };
-
-  const changeMode = (nextMode: VisitMode) => {
-    setMode(nextMode);
-    setWalking(0);
   };
 
   useEffect(() => {
@@ -381,25 +391,46 @@ export default function App() {
         onPosition={setProgress} onError={setError} onLoadStatus={setLoadStatus} />
       <div className="scene-frame" aria-hidden="true" />
       <header className="scene-header">
-        <button className="back-button" onClick={leavePainting}>← 回到卷首</button>
-        <div className="scene-brand"><span className="scene-seal">漓</span><span>漓江 <em>· 移笔游目</em></span></div>
-        <div className="scene-header-actions">
-          <button className="info-button scene-replay" onClick={replayIntro}>重看象山序章 ↻</button>
-          <button className="info-button" onClick={() => setHelp(true)}>游目指南 <span>ⓘ</span></button>
+        <button className="back-button" onClick={leavePainting} aria-label="回到卷首">←</button>
+        <div className="scene-time"><TimeSwitcher time={time} onTime={selectTime} compact /></div>
+        <div className="more-wrap">
+          <button className="info-button" aria-expanded={more} aria-haspopup="menu"
+            onClick={() => { setMore((open) => !open); setPlaceCard(false); }}>更多</button>
+          {more && (
+            <div className="more-menu" role="menu" aria-label="更多选项">
+              <button role="menuitem" onClick={() => {
+                setMore(false);
+                setMode(mode === 'guided' ? 'free' : 'guided');
+                setWalking(0);
+                setPlaceCard(false);
+              }}>
+                {mode === 'guided' ? '改为纯观画' : '改为人物随行'}
+              </button>
+              <button role="menuitem" onClick={() => { setMore(false); replayIntro(); }}>重看象山序章</button>
+              <button role="menuitem" onClick={() => { setMore(false); setHelp(true); }}>游目指南</button>
+              <button role="menuitem" onClick={() => { setMore(false); startFinale(); }}>卷尾 · 回望象山</button>
+            </div>
+          )}
         </div>
       </header>
-      <div className="scene-time"><TimeSwitcher time={time} onTime={selectTime} compact /></div>
-      <div className="scene-label">桂林山水 · 四景入卷</div>
-      <aside className="encounter-rail" aria-label="画中可发现的故事">
-        <span className="encounter-eyebrow">画中故事</span>
-        {encountersFor(time).length ? encountersFor(time).map((encounter) => (
-          <button key={encounter.id} type="button" className={activeEncounter === encounter.id ? 'active' : ''}
-            onClick={() => openEncounter(encounter.id)} aria-expanded={activeEncounter === encounter.id}>
-            <span className="encounter-dot" aria-hidden="true">◦</span>
-            <span><strong>{encounter.title}</strong><small>{encounter.kicker}</small></span>
+      {stories.length > 0 && (
+        <div className="story-entry">
+          <button type="button" aria-expanded={storyOpen} aria-haspopup="menu"
+            onClick={() => { setStoryOpen((open) => !open); setPlaceCard(false); }}>
+            画中故事 <span aria-hidden="true">{stories.length}</span>
           </button>
-        )) : <p className="encounter-rest">此刻宜静观山水</p>}
-      </aside>
+          {storyOpen && (
+            <div className="story-menu" role="menu" aria-label={`${TIMES.find((item) => item.id === time)?.label ?? ''}的画中故事`}>
+              {stories.map((encounter) => (
+                <button key={encounter.id} role="menuitem" type="button"
+                  onClick={() => { setStoryOpen(false); openEncounter(encounter.id); }}>
+                  <strong>{encounter.title}</strong><small>{encounter.kicker}</small>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
       {activeEncounter && findEncounter(activeEncounter).time === time && (
         <section className="encounter-sheet" role="region" aria-label={`${findEncounter(activeEncounter).title}互动`}>
           <button className="encounter-close" onClick={closeEncounter} aria-label="关闭互动">×</button>
@@ -408,30 +439,38 @@ export default function App() {
           <p>{findEncounter(activeEncounter).intro}</p>
           {activeEncounter === 'night-stage' ? (
             <div className="night-actions">
-              <div className="night-view" role="group" aria-label="选择夜景视角">
+              <div className="night-view" role="group" aria-label="选择观看位置">
                 <button className={nightView === 'shore' ? 'active' : ''} aria-pressed={nightView === 'shore'}
-                  onClick={() => setNightView('shore')}>岸边观看</button>
+                  onClick={() => setNightView('shore')}>岸边</button>
                 <button className={nightView === 'boat' ? 'active' : ''} aria-pressed={nightView === 'boat'}
-                  onClick={() => setNightView('boat')}>船上观看（游船插画）</button>
+                  onClick={() => setNightView('boat')}>游船插画</button>
               </div>
-              <button onClick={() => setNightLights((value) => !value)} aria-pressed={nightLights}>
-                {nightLights ? '◉ 关闭灯光叠加' : '◎ 分段点亮江岸'}
+              {/* The single primary action: the river music drives the reflections. */}
+              <button onClick={toggleNightMusic} aria-pressed={musicPlaying} className="night-music-button market-main">
+                {musicPlaying ? '暂停听江夜游' : '开始听江夜游'}
               </button>
-              <button onClick={() => {
-                setNightRhythm((value) => !value);
-                setNightLights(true);
-              }} aria-pressed={nightRhythm}>
-                {nightRhythm ? '◉ 关闭静音节奏预览' : '♫ 预览倒影节拍（静音）'}
-              </button>
-              <button onClick={toggleNightMusic} aria-pressed={musicPlaying} className="night-music-button">
-                {musicPlaying ? 'Ⅱ 暂停原创器乐' : '♪ 播放原创器乐 · 音乐联动倒影'}
-              </button>
-              <button onClick={() => trigger('song')}>♫ 对山歌 · 人物姿态预览（无演唱）</button>
-              <button onClick={() => setNightDrones((value) => !value)} aria-pressed={nightDrones}>
-                {nightDrones ? '◉ 关闭无人机光点' : '✧ 查看无人机概念光点'}
-              </button>
-              <p className="night-note" role="status">当前：{nightView === 'shore' ? '岸边' : '游船'}视角 · {nightLights ? '灯光开启' : '灯光关闭'} · {nightDrones ? '无人机光点开启' : '无人机光点关闭'} · {musicPlaying ? '原创器乐播放中，倒影跟随实时频谱' : '未播放音乐'}。此器乐非传统山歌录音。</p>
+              <p className="night-note" role="status">
+                {musicPlaying ? '原创器乐播放中，水面倒影随实时频谱变化。' : '点击开始后播放项目专门创作的器乐，倒影随声音变化。'}此器乐并非传统山歌录音。
+              </p>
               {musicError && <p className="music-error" role="alert">{musicError}</p>}
+              {/* Concept demos are not product surface: they wait behind a disclosure. */}
+              <details className="night-lab">
+                <summary>灯光与概念演示</summary>
+                <button onClick={() => setNightLights((value) => !value)} aria-pressed={nightLights}>
+                  {nightLights ? '◉ 关闭江岸灯光' : '◎ 点亮江岸灯光'}
+                </button>
+                <button onClick={() => {
+                  setNightRhythm((value) => !value);
+                  setNightLights(true);
+                }} aria-pressed={nightRhythm}>
+                  {nightRhythm ? '◉ 关闭静音节奏预览' : '♫ 静音节奏预览'}
+                </button>
+                <button onClick={() => trigger('song')}>♫ 对山歌姿态（无演唱）</button>
+                <button onClick={() => setNightDrones((value) => !value)} aria-pressed={nightDrones}>
+                  {nightDrones ? '◉ 关闭无人机光点' : '✧ 无人机概念光点'}
+                </button>
+                <small>灯组、节拍、山歌与无人机均为概念演示；正式录音与动作素材未到位。</small>
+              </details>
             </div>
           ) : activeEncounter === 'fishmarket' ? (
             <FishMarket session={market} onAction={marketAction} />
@@ -446,52 +485,50 @@ export default function App() {
           <small className="encounter-disclaimer">{findEncounter(activeEncounter).detail}</small>
         </section>
       )}
-      <section className="place-card" aria-live="polite">
-        <div className="place-heading"><span>第{current.number}景</span><span>{current.eyebrow}</span></div>
-        <h2>{current.name}</h2>
-        <p>{current.description}</p>
-        <div className="place-footer"><small>{current.hint}</small>
-          <button onClick={() => trigger(place === 'glassbridge' && time === 'night' ? 'song' : 'gaze')}>
-            {place === 'glassbridge' && time === 'night' ? '♪ 对山歌' : '◌ 驻足赏景'}
-          </button>
-        </div>
-        {place === 'glassbridge' && <button type="button" className="scene-finale-link"
-          onClick={startFinale}>卷尾 · 回望象山题诗 ↗</button>}
-      </section>
-      <div className="scene-guide">拖动画卷，听风看山 <span aria-hidden="true">↔</span></div>
+      {placeCard && (
+        <section className="place-card" role="region" aria-label={`${current.name}景点说明`}>
+          <button className="encounter-close" onClick={() => setPlaceCard(false)} aria-label="关闭景点说明">×</button>
+          <div className="place-heading"><span>第{current.number}景</span><span>{current.eyebrow}</span></div>
+          <h2>{current.name}</h2>
+          <p>{current.description}</p>
+          <div className="place-footer">
+            <button onClick={() => trigger(place === 'glassbridge' && time === 'night' ? 'song' : 'gaze')}>
+              {place === 'glassbridge' && time === 'night' ? '♪ 对山歌' : '◌ 驻足赏景'}
+            </button>
+          </div>
+        </section>
+      )}
       <nav className="scene-landmarks" aria-label="画卷景点导航">
         {PLACES.map((item, index) => (
           <button className={item.id === place ? 'selected' : ''} key={item.id}
             aria-current={item.id === place ? 'location' : undefined}
-            onClick={() => navigatePlace(item.id)}>
+            aria-expanded={item.id === place ? placeCard : undefined}
+            onClick={() => {
+              if (item.id === place) { setPlaceCard((open) => !open); setStoryOpen(false); return; }
+              navigatePlace(item.id);
+            }}>
             <small>{String(index + 1).padStart(2, '0')}</small><strong>{item.name}</strong>
           </button>
         ))}
       </nav>
-      <footer className="scene-controls">
-        <div className="scene-mode-switch" role="group" aria-label="选择游览方式">
-          <button className={mode === 'free' ? 'active' : ''} aria-pressed={mode === 'free'}
-            onClick={() => changeMode('free')}>漫游</button>
-          <button className={mode === 'guided' ? 'active' : ''} aria-pressed={mode === 'guided'}
-            onClick={() => changeMode('guided')}>导览</button>
-        </div>
+      {/* Walking belongs to the figure; pure viewing has nothing to walk. */}
+      {mode === 'guided' && (
         <div className="control-walk" aria-label="人物行走">
           <button {...holdToWalk(-1)} title="按住向左行走" aria-label="按住向左走">←</button>
           <button {...holdToWalk(1)} title="按住向右行走" aria-label="按住向右走">→</button>
         </div>
-        <div className="scroll-progress" aria-label={`画卷位置 ${Math.round(progress * 100)}%`}>
-          <span>卷首</span><div className="progress-track"><i style={{ width: `${progress * 100}%` }} /></div><span>卷尾</span>
-        </div>
-        <div className="control-view" aria-label="画卷视图控制">
-          <button onClick={() => magnify(1 / 1.16)} title="缩小" aria-label="缩小">−</button>
-          <button onClick={() => magnify(1.16)} title="放大" aria-label="放大">＋</button>
-        </div>
-      </footer>
+      )}
+      <div className="control-view" aria-label="画卷缩放">
+        <button onClick={() => magnify(1 / 1.16)} title="缩小" aria-label="缩小">−</button>
+        <button onClick={() => magnify(1.16)} title="放大" aria-label="放大">＋</button>
+      </div>
+      <div className="scroll-progress" aria-label={`画卷位置 ${Math.round(progress * 100)}%`}>
+        <div className="progress-track"><i style={{ width: `${progress * 100}%` }} /></div>
+      </div>
       {!ready && !error && <div className="scene-loading" role="status"><div className="loading-ornament">◈</div>山水正在徐徐展开…<small>{loadStatus ? `正在载入${loadStatus.currentScene === 'day' ? '白昼' : loadStatus.currentScene === 'dusk' ? '夕照' : '夜景'}原幅无损画卷` : '正在载入原幅无损画卷'}</small></div>}
-      {ready && loadStatus && (loadStatus.loading.length > 0 || loadStatus.failed.length > 0) && (
+      {ready && loadStatus && loadStatus.failed.length > 0 && (
         <p className="scene-load-note" role="status">
-          {loadStatus.loading.length > 0 && <>其余画卷与人姿正在后台载入（{loadStatus.loading.join('、')}）· 当前画卷可正常游览</>}
-          {loadStatus.failed.length > 0 && <><br />以下素材未能载入，已改用可用姿态或热点：{loadStatus.failed.join('、')}</>}
+          以下素材未能载入，已改用可用姿态或热点：{loadStatus.failed.join('、')}
         </p>
       )}
       {error && <div className="scene-error" role="alert"><strong>画卷暂未展开</strong><p>{error}</p><button onClick={() => window.location.reload()}>重试载入</button></div>}

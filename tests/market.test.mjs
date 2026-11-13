@@ -8,13 +8,12 @@ function run(...actions) {
   return actions.reduce((session, action) => applyMarketAction(session, action), createMarketSession());
 }
 
-test('the full happy path walks waiting → talking → picking → confirming → completed', () => {
+test('the happy path reaches the fish in one click and completes in four', () => {
   let s = createMarketSession();
   assert.equal(s.stage, 'waiting');
   const stages = [s.stage];
   for (const action of [
     { type: 'chat' },
-    { type: 'begin-picking' },
     { type: 'pick', kindId: 'small' },
     { type: 'ask-confirm' },
     { type: 'confirm' },
@@ -22,15 +21,25 @@ test('the full happy path walks waiting → talking → picking → confirming �
     s = applyMarketAction(s, action);
     stages.push(s.stage);
   }
-  assert.deepEqual(stages, ['waiting', 'talking', 'picking', 'picking', 'confirming', 'completed']);
+  // R2 removed the "talking" beat: greeting the stallholder lands on the fish,
+  // because that intermediate step offered no new choice.
+  assert.deepEqual(stages, ['waiting', 'picking', 'picking', 'confirming', 'completed']);
   assert.deepEqual(s.record, { outcome: 'bought', kindId: 'small' });
   assert.match(s.reply, /小鱼/);
 });
 
+test('the internal stage stays available for future dialogue beats', () => {
+  // `begin-picking` from `waiting` still works, so a later scripted
+  // conversation can insert a `talking` beat without changing the machine.
+  const s = run({ type: 'begin-picking' });
+  assert.equal(s.stage, 'picking');
+  assert.ok(MARKET_STEPS.some((step) => step.stage === 'talking'));
+});
+
 test('every stage transition produces a visible reply and bumps the sequence', () => {
-  const s = run({ type: 'chat' }, { type: 'begin-picking' });
+  const s = run({ type: 'chat' });
   assert.ok(s.reply.length > 0, 'visible feedback for the current step');
-  assert.equal(s.sequence, 2, 'one-shot feedback fired twice');
+  assert.equal(s.sequence, 1, 'one-shot feedback fired once');
   assert.equal(marketStepIndex(s), 2);
   assert.deepEqual(MARKET_STEPS.map((step) => step.label), ['等待', '交谈', '挑选', '确认', '完成']);
 });
@@ -62,7 +71,9 @@ test('repeated confirmation cannot submit twice', () => {
 
 test('illegal actions are ignored and return the same session object', () => {
   const fresh = createMarketSession();
-  for (const action of [{ type: 'confirm' }, { type: 'pick', kindId: 'small' }, { type: 'ask-confirm' }, { type: 'begin-picking' }]) {
+  // `begin-picking` IS legal from waiting (see the staged-beat test above), so
+  // the illegal set is everything that needs an earlier decision.
+  for (const action of [{ type: 'confirm' }, { type: 'pick', kindId: 'small' }, { type: 'ask-confirm' }]) {
     assert.equal(applyMarketAction(fresh, action), fresh, `${action.type} cannot run from waiting`);
   }
   // Picking an unknown kind is rejected without changing stage.
@@ -75,7 +86,7 @@ test('illegal actions are ignored and return the same session object', () => {
 test('double-clicking "chat" or "pick" does not corrupt the session', () => {
   const s1 = applyMarketAction(createMarketSession(), { type: 'chat' });
   const s2 = applyMarketAction(s1, { type: 'chat' });
-  assert.equal(s2, s1, 'second chat click ignored while already talking');
+  assert.equal(s2, s1, 'second chat click ignored while already at the fish');
   const p1 = run({ type: 'chat' }, { type: 'begin-picking' }, { type: 'pick', kindId: 'small' });
   const p2 = applyMarketAction(p1, { type: 'pick', kindId: 'small' });
   assert.equal(p2, p1, 'same pick does not stack state (still picking)');
@@ -124,6 +135,7 @@ test('switching time mid-flow can reset the session without losing the last resu
 test('allowed-from table stays consistent with the step order', () => {
   const order = MARKET_STEPS.map((step) => step.stage);
   assert.equal(marketAllows(createMarketSession(), { type: 'chat' }), true);
+  assert.equal(marketAllows(createMarketSession(), { type: 'begin-picking' }), true);
   assert.equal(marketAllows(createMarketSession(), { type: 'confirm' }), false);
   assert.equal(order.indexOf('confirming') > order.indexOf('picking'), true);
   assert.equal(findMarketKind('small')?.label, '一尾小鱼');
