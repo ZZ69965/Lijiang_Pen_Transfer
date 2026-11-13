@@ -29,6 +29,17 @@ export class NightMusic {
       this.audio.pause();
       return false;
     }
+    await this.start();
+    return true;
+  }
+
+  /**
+   * Start playback and resolve the REAL end state. May resolve false when the
+   * browser refuses (or the visitor paused) while `play()` was pending; the
+   * caller must report this state rather than assuming success.
+   */
+  async start(): Promise<boolean> {
+    if (this.disposed) return false;
     // Called synchronously by the React click handler; browser gesture permits
     // first-time AudioContext initialization and media playback.
     if (!this.context) {
@@ -42,8 +53,10 @@ export class NightMusic {
       this.analyser.connect(this.context.destination);
     }
     await this.context.resume();
+    if (this.disposed) return false;
     await this.audio.play();
-    return true;
+    // `play()` can resolve after a pause() raced it; report what is true now.
+    return this.playing && !this.disposed;
   }
 
   /**

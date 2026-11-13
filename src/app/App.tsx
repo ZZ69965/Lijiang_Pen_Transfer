@@ -1,12 +1,17 @@
 import { lazy, Suspense, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 const ElephantIntro = lazy(() => import('./ElephantIntro'));
 import { NightMusic } from '../engine/NightMusic';
-import ScrollStage from './ScrollStage';
+import ScrollStage, { type StageHandle } from './ScrollStage';
+import FishMarket from './FishMarket';
 import { encountersFor, findEncounter, type EncounterId, type DialogueChoice, type NightView } from '../content/encounters';
 import {
   PLACES, TIMES, getPlace,
   type PlaceId, type TimeOfDay, type VisitMode,
 } from '../content/places';
+import { createSnapshot, type SceneSnapshot } from '../content/snapshot';
+import { applyMarketAction, createMarketSession, type MarketAction } from '../content/market';
+import type { LoadStatus } from '../engine/ScrollEngine';
+import { AudioIntentQueue } from '../content/async';
 
 const art = (name: string) => `${import.meta.env.BASE_URL}art/${name}`;
 
@@ -42,6 +47,13 @@ export default function App() {
   const [musicError, setMusicError] = useState('');
   const [musicController, setMusicController] = useState<NightMusic | null>(null);
   const musicRef = useRef<NightMusic | null>(null);
+  /** Serialises play/pause so a late `play()` cannot revive sound after leaving. */
+  const musicQueue = useRef<AudioIntentQueue | null>(null);
+  const [market, setMarket] = useState(createMarketSession);
+  /** Saved painting position, restored after the prologue/finale returns. */
+  const [snapshot, setSnapshot] = useState<SceneSnapshot | null>(null);
+  const stageRef = useRef<StageHandle | null>(null);
+  const [loadStatus, setLoadStatus] = useState<LoadStatus | null>(null);
   const [previewId, setPreviewId] = useState<EncounterId>('cormorant');
   const [previewNumber, setPreviewNumber] = useState(0);
   const [place, setPlace] = useState<PlaceId>('elephant');
@@ -56,19 +68,48 @@ export default function App() {
   const [zoomFactor, setZoomFactor] = useState(1);
 
   useEffect(() => () => {
+    musicQueue.current?.close();
     musicRef.current?.dispose();
     musicRef.current = null;
   }, []);
 
-  const toggleNightMusic = async () => {
+  /** Lazily create the audio controller and its serialising queue. */
+  const ensureMusic = (): { controller: NightMusic; queue: AudioIntentQueue } => {
     let controller = musicRef.current;
     if (!controller) {
       controller = new NightMusic();
       musicRef.current = controller;
       setMusicController(controller);
     }
+    if (!musicQueue.current) {
+      const owned = controller;
+      musicQueue.current = new AudioIntentQueue(
+        () => owned.start(),
+        () => owned.stop(),
+        () => owned.playing,
+      );
+    }
+    musicQueue.current.reopen();
+    return { controller, queue: musicQueue.current };
+  };
+
+  /**
+   * Every path that silences audio goes through here: it closes the queue so a
+   * `play()` still pending inside the browser cannot turn sound back on.
+   */
+  const silenceMusic = () => {
+    musicQueue.current?.close();
+    musicRef.current?.stop();
+    setMusicPlaying(false);
+  };
+
+  const toggleNightMusic = async () => {
+    const { controller, queue } = ensureMusic();
+    const request = queue.request(controller.playing ? 'pause' : 'play');
     try {
-      const playing = await controller.toggle();
+      const playing = await request;
+      // A newer click (or leaving/hiding) already superseded this one.
+      if (musicRef.current !== controller) return;
       setMusicPlaying(playing);
       setMusicError('');
       if (playing) {
@@ -76,30 +117,25 @@ export default function App() {
         setNightRhythm(true);
       }
     } catch (error) {
+      if (musicRef.current !== controller) return;
       console.error('Original night music playback failed', error);
-      controller.stop();
-      setMusicPlaying(false);
+      silenceMusic();
       setMusicError('音乐播放失败，请检查浏览器是否允许音频播放，或稍后重试。');
     }
   };
 
   const leavePainting = () => {
-    musicRef.current?.stop();
-    setMusicPlaying(false);
-    setMusicError('');
+    silenceMusic();
     setWalking(0);
     setActiveEncounter(null);
     setHelp(false);
     setEntered(false);
     setIntroKind(null);
+    setSnapshot(null);
   };
 
   const selectTime = (next: TimeOfDay) => {
-    if (next !== 'night') {
-      musicRef.current?.stop();
-      setMusicPlaying(false);
-      setMusicError('');
-    }
+    if (next !== 'night') silenceMusic();
     setTime(next);
     closeEncounter();
   };
@@ -111,24 +147,55 @@ export default function App() {
       closeEncounter();
       return;
     }
+    // Opening a story takes the input: stop walking, drop held keys.
+    setWalking(0);
     setPlace(encounter.place);
     setActiveEncounter(id);
     setEncounterReply('');
+    if (id === 'fishmarket') setMarket((session) => applyMarketAction(session, { type: 'open' }));
   };
 
   const closeEncounter = () => {
-    if (activeEncounter === 'night-stage' && musicRef.current?.playing) {
-      musicRef.current.stop();
-      setMusicPlaying(false);
-    }
+    if (activeEncounter === 'night-stage') silenceMusic();
     setMusicError('');
     setActiveEncounter(null);
     setEncounterReply('');
+    // Unfinished flows are discarded; a completed purchase stays remembered.
+    setMarket((session) => applyMarketAction(session, { type: 'reset' }));
   };
 
+  const marketAction = (action: MarketAction) => {
+    setMarket((session) => applyMarketAction(session, action));
+    // Scene-side feedback: the stall's water surface ripples when a purchase
+    // completes, so the result is visible in the painting, not only in text.
+    if (action.type === 'confirm') {
+      setPreviewId('fishmarket');
+      setPreviewNumber((count) => count + 1);
+    }
+  };
+
+  /** Capture where the visitor is right before the prologue/finale unmounts us. */
+  const captureSnapshot = () => {
+    const view = stageRef.current?.captureView();
+    if (!view) return;
+    setSnapshot(createSnapshot({
+      ...view,
+      time,
+      mode,
+      place,
+      marketRecord: market.record,
+    }));
+  };
+
+  /**
+   * Navigation and canvas dragging share one camera owner: pressing a landmark
+   * drops any held walk and closes the story card first, so the guided camera
+   * is not fought over by two inputs at once.
+   */
   const navigatePlace = (id: PlaceId) => {
+    setWalking(0);
     setPlace(id);
-    closeEncounter();
+    if (activeEncounter) closeEncounter();
   };
 
   const changeMode = (nextMode: VisitMode) => {
@@ -147,15 +214,22 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [activeEncounter, help]);
 
+  // Leaving the tab hides the painting: stop sound and release the walker so
+  // nothing keeps running (or keeps sounding) while the visitor is away.
   useEffect(() => {
-    const stopWhenHidden = () => {
-      if (document.hidden && musicRef.current?.playing) {
-        musicRef.current.stop();
-        setMusicPlaying(false);
-      }
+    const onHide = () => {
+      if (!document.hidden) return;
+      silenceMusic();
+      setWalking(0);
+      setMusicError('');
     };
-    document.addEventListener('visibilitychange', stopWhenHidden);
-    return () => document.removeEventListener('visibilitychange', stopWhenHidden);
+    const onBlur = () => setWalking(0);
+    document.addEventListener('visibilitychange', onHide);
+    window.addEventListener('blur', onBlur);
+    return () => {
+      document.removeEventListener('visibilitychange', onHide);
+      window.removeEventListener('blur', onBlur);
+    };
   }, []);
 
   const chooseDialogue = (choice: DialogueChoice) => {
@@ -167,6 +241,7 @@ export default function App() {
     }
   };
 
+  /** Opening a fresh journey: no earlier position to restore. */
   const selectMode = (newMode: VisitMode) => {
     setMode(newMode);
     setEntered(newMode === 'free');
@@ -174,8 +249,8 @@ export default function App() {
     setReady(false);
     setError('');
     setPlace('elephant');
-    musicRef.current?.stop();
-    setMusicPlaying(false);
+    setSnapshot(null);
+    silenceMusic();
     closeEncounter();
   };
   const completeIntro = () => {
@@ -183,31 +258,42 @@ export default function App() {
     setEntered(true);
     setReady(false);
   };
+  /** "重看象山序章": the painting unmounts, so remember exactly where we were. */
   const replayIntro = () => {
-    musicRef.current?.stop();
-    setMusicPlaying(false);
+    captureSnapshot();
+    silenceMusic();
     setWalking(0);
     setActiveEncounter(null);
     setIntroKind('entrance');
     setEntered(false);
   };
+  /** Finale: snapshot first; returning restores the 4th-scene view. */
   const startFinale = () => {
-    musicRef.current?.stop();
-    setMusicPlaying(false);
+    captureSnapshot();
+    silenceMusic();
     setActiveEncounter(null);
     setWalking(0);
     setIntroKind('finale');
     setEntered(false);
   };
+  /** "回到卷首" from the finale: a deliberate new start, not a restore. */
   const finishFinale = () => {
     setIntroKind(null);
     setEntered(false);
+    setSnapshot(null);
   };
+  /** "返回画卷": remount the stage at the saved position. */
   const backFromFinale = () => {
     setIntroKind(null);
     setEntered(true);
     setReady(false);
   };
+  /**
+   * Whoever owns the input: an open story card, the guide overlay or an intro.
+   * While locked the engine drops held keys/pointers and refuses new walking.
+   */
+  const inputLocked = Boolean(activeEncounter) || help || Boolean(introKind);
+
   const trigger = (type: 'gaze' | 'song') => {
     setActionType(type);
     setActionNumber((n) => n + 1);
@@ -219,6 +305,8 @@ export default function App() {
   const holdToWalk = (direction: number) => ({
     onPointerDown: (event: ReactPointerEvent<HTMLButtonElement>) => {
       event.currentTarget.setPointerCapture(event.pointerId);
+      // A dialogue owns the input: do not start walking underneath it.
+      if (inputLocked) return;
       setWalking(direction);
     },
     onPointerUp: () => setWalking(0),
@@ -282,14 +370,15 @@ export default function App() {
   const current = getPlace(place);
   return (
     <main className="experience">
-      <ScrollStage mode={mode} time={time} target={place} walking={walking}
+      <ScrollStage ref={stageRef} mode={mode} time={time} target={place} walking={walking}
         nightView={nightView} nightLights={nightLights} nightRhythm={nightRhythm} nightDrones={nightDrones}
         musicPlaying={musicPlaying} musicController={musicController}
         previewId={previewId} previewNumber={previewNumber}
         actionNumber={actionNumber} actionType={actionType}
         zoomNumber={zoomNumber} zoomFactor={zoomFactor}
+        inputLocked={inputLocked} restoreFrom={snapshot}
         onReady={() => setReady(true)} onPlace={navigatePlace} onEncounter={openEncounter}
-        onPosition={setProgress} onError={setError} />
+        onPosition={setProgress} onError={setError} onLoadStatus={setLoadStatus} />
       <div className="scene-frame" aria-hidden="true" />
       <header className="scene-header">
         <button className="back-button" onClick={leavePainting}>← 回到卷首</button>
@@ -344,6 +433,8 @@ export default function App() {
               <p className="night-note" role="status">当前：{nightView === 'shore' ? '岸边' : '游船'}视角 · {nightLights ? '灯光开启' : '灯光关闭'} · {nightDrones ? '无人机光点开启' : '无人机光点关闭'} · {musicPlaying ? '原创器乐播放中，倒影跟随实时频谱' : '未播放音乐'}。此器乐非传统山歌录音。</p>
               {musicError && <p className="music-error" role="alert">{musicError}</p>}
             </div>
+          ) : activeEncounter === 'fishmarket' ? (
+            <FishMarket session={market} onAction={marketAction} />
           ) : (
             <div className="dialogue-options">
               {findEncounter(activeEncounter).choices.map((choice) => (
@@ -396,7 +487,13 @@ export default function App() {
           <button onClick={() => magnify(1.16)} title="放大" aria-label="放大">＋</button>
         </div>
       </footer>
-      {!ready && !error && <div className="scene-loading" role="status"><div className="loading-ornament">◈</div>山水正在徐徐展开…<small>正在载入三时辰原幅无损画卷</small></div>}
+      {!ready && !error && <div className="scene-loading" role="status"><div className="loading-ornament">◈</div>山水正在徐徐展开…<small>{loadStatus ? `正在载入${loadStatus.currentScene === 'day' ? '白昼' : loadStatus.currentScene === 'dusk' ? '夕照' : '夜景'}原幅无损画卷` : '正在载入原幅无损画卷'}</small></div>}
+      {ready && loadStatus && (loadStatus.loading.length > 0 || loadStatus.failed.length > 0) && (
+        <p className="scene-load-note" role="status">
+          {loadStatus.loading.length > 0 && <>其余画卷与人姿正在后台载入（{loadStatus.loading.join('、')}）· 当前画卷可正常游览</>}
+          {loadStatus.failed.length > 0 && <><br />以下素材未能载入，已改用可用姿态或热点：{loadStatus.failed.join('、')}</>}
+        </p>
+      )}
       {error && <div className="scene-error" role="alert"><strong>画卷暂未展开</strong><p>{error}</p><button onClick={() => window.location.reload()}>重试载入</button></div>}
       {help && <div className="help-overlay" onClick={() => setHelp(false)}>
         <section className="help-paper" role="dialog" aria-modal="true" aria-label="游目指南" onClick={(e) => e.stopPropagation()}>

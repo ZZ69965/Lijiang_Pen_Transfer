@@ -48,6 +48,9 @@ test('Morning directions, noon fishing and market, night show controls remain av
   const fisher = findEncounter('fisher');
   assert.ok(fisher.choices.some((x) => x.navigateTo === 'elephant'));
   assert.ok(findEncounter('cormorant').choices.some((x) => x.splash));
-  assert.ok(findEncounter('fishmarket').choices.some((x) => x.id === 'buy-fish'));
+  // The market is no longer a pair of static answers: it is a staged event whose
+  // logic lives in src/content/market.ts (covered by tests/market.test.mjs).
+  assert.equal(findEncounter('fishmarket').choices.length, 0, 'market uses the staged fish-market panel');
+  assert.match(findEncounter('fishmarket').detail, /支付/, 'still states it is not a real purchase');
   assert.equal(findEncounter('night-stage').choices.length, 0, 'night view uses separate accessible React controls');
 });

@@ -562,3 +562,33 @@
 .elephant-time-night .elephant-timeline-track::after{border-color:#e0c79c;background:#253e47;}
 .elephant-timeline-track[aria-disabled="true"]{cursor:default;opacity:.5;}
 .elephant-timeline-track:focus-visible{outline:2px solid #6c8a74;border-radius:2px;}
+
+/* ---- 鱼市互动闭环（2026-11-13）：阶段、结果与可访问按钮 ---- */
+.market-flow{display:grid;gap:9px}
+.market-steps{display:flex;flex-wrap:wrap;gap:4px;margin:0 0 2px;padding:0;list-style:none}
+.market-steps li{display:flex;align-items:center;gap:4px;padding:3px 7px;border:1px solid rgba(150,133,91,.32);border-radius:999px;font-size:9px;letter-spacing:.06em;color:#8a7c60;background:rgba(255,252,238,.5)}
+.market-steps li span{display:grid;place-items:center;width:13px;height:13px;border-radius:50%;background:rgba(150,133,91,.22);font-size:8px}
+.market-steps li.done{color:#546a4e;border-color:rgba(84,106,78,.34)}
+.market-steps li.done span{background:rgba(84,106,78,.82);color:#f8f1db}
+.market-steps li.current{color:#f8f1db;background:rgba(84,106,78,.9);border-color:rgba(84,106,78,.9)}
+.market-steps li.current span{background:rgba(248,241,219,.9);color:#4a5c45}
+.market-actions{display:grid;grid-template-columns:1fr 1fr;gap:7px}
+.market-actions>button{min-height:34px;padding:7px 9px;border:1px solid rgba(114,132,91,.38);border-radius:7px;background:rgba(255,252,238,.72);color:#52664e;font-size:10px;letter-spacing:.025em;text-align:left;transition:background 150ms ease,border-color 150ms ease}
+.market-actions>button:hover:not(:disabled){background:#e7e9d5;border-color:#8d9b70}
+.market-actions>button:focus-visible{outline:2px solid #6c805d;outline-offset:2px}
+.market-actions>button:disabled{opacity:.55;cursor:not-allowed}
+.market-actions>.market-kind{grid-column:1/-1;display:flex;flex-direction:column;gap:2px}
+.market-kind strong{font-weight:500;font-size:11px;letter-spacing:.08em}
+.market-kind small{font-size:9px;color:#7b755a;line-height:1.5}
+.market-kind.picked{background:#e5ecd6;border-color:#7d9160}
+.market-actions>.market-confirm{grid-column:1/-1;color:#f8f1db;background:#5d7550;border-color:#5d7550;font-weight:500;text-align:center}
+.market-actions>.market-confirm:hover:not(:disabled){background:#4d6343;border-color:#4d6343}
+.market-actions>.market-cancel{grid-column:1/-1;text-align:center;background:transparent;border-color:rgba(150,133,91,.4);color:#7d6d52}
+.market-reply{margin:2px 0 0!important;padding:8px 10px;border-left:3px solid #a78054;background:rgba(255,244,221,.9);font-size:11px!important;line-height:1.7!important;color:#58452c}
+.market-record{margin:0 0 2px!important;padding:5px 8px;border-radius:6px;background:rgba(120,140,110,.14);font-size:9px!important;color:#5c6a4f!important;line-height:1.6!important}
+.scene-load-note{position:absolute;left:50%;bottom:88px;transform:translateX(-50%);z-index:6;margin:0;padding:5px 12px;border-radius:999px;background:rgba(247,242,222,.82);font-size:9px;line-height:1.55;letter-spacing:.04em;color:#6d735b;text-align:center;max-width:min(560px,calc(100vw - 30px));backdrop-filter:blur(7px)}
+@media(max-width:700px){.market-actions{grid-template-columns:1fr}.scene-load-note{bottom:76px;font-size:8px}}
+@media(prefers-reduced-motion:reduce){.market-actions>button{transition:none}}
+/* 三维不可用时的退路：首要动作是回到原画卷，回卷首为次要动作 */
+.elephant-fallback {flex-direction:column;gap:10px}
+.elephant-fallback .elephant-fallback-home {background:transparent;color:#5d6f55;border:1px solid #8d9b70;padding:9px 20px;font-size:12px}

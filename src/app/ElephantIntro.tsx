@@ -86,7 +86,7 @@ export default function ElephantIntro({ onComplete, time, variant = 'entrance', 
         setPlaying(instance.getPlaying());
       } catch (cause) {
         console.warn('Three.js intro could not initialise', cause);
-        if (!disposed) setError('当前设备暂时不能运行立体序章，可直接进入高清画卷。');
+        if (!disposed) setError('当前设备暂时不能运行立体' + (variant === 'finale' ? '卷尾' : '序章') + '，可直接回到高清画卷。');
       }
     }).catch((cause: unknown) => {
       console.warn('Three.js intro could not load', cause);
@@ -222,7 +222,7 @@ export default function ElephantIntro({ onComplete, time, variant = 'entrance', 
       <footer className="elephant-footer">
         {variant === 'entrance' && atEnd && <button className="elephant-enter-now" type="button" onClick={finish}>继续游历 · 进入长卷 ↗</button>}
         {variant === 'finale' && <div className="elephant-ending-actions">
-          <button type="button" onClick={onBack}>返回画卷</button>
+          {onBack && <button type="button" onClick={() => backRef.current?.()}>返回画卷</button>}
           <button type="button" onClick={finish}>完成游历 · 回到卷首</button>
         </div>}
         <div className="elephant-progress-label" role="group" aria-label="跳转序章章节">
@@ -261,7 +261,12 @@ export default function ElephantIntro({ onComplete, time, variant = 'entrance', 
         <div className="elephant-fallback" role="alert">
           <strong>山色未能立体展开</strong>
           <p>{error}</p>
-          <button type="button" onClick={finish}>直接进入画卷</button>
+          {/* A failed prologue/finale must land on the usable painting, at the
+              exact position the visitor left. Going home needs an explicit click. */}
+          <button type="button" onClick={() => (onBack ? backRef.current?.() : completeRef.current())}>
+            {onBack ? '回到画卷' : '进入画卷'}
+          </button>
+          <button type="button" className="elephant-fallback-home" onClick={finish}>回到卷首</button>
         </div>
       )}
     </main>
