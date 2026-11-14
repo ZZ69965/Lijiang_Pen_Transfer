@@ -58,9 +58,13 @@ export const WALKWAY: readonly FootlinePoint[] = [
   { x: 1340, y: 400, review: 'pending', foreground: true },
   { x: 1390, y: 409, review: 'pending', foreground: true },
   { x: 1450, y: 427, review: 'pending', foreground: true },
-  { x: 1500, y: 470, review: 'checked' },
-  { x: 1560, y: 500, review: 'checked' },
-  { x: 1700, y: 508, review: 'checked' },
+  // Right landing: the deck keeps its y~428 course out to x~1600, then the
+  // painted steps drop to the bank. Anything below y~430 here is the pier /
+  // open water, which is where an earlier guess put the walker.
+  { x: 1540, y: 428, review: 'pending', foreground: true },
+  { x: 1600, y: 432, review: 'pending', foreground: true },
+  { x: 1640, y: 470, review: 'checked' },
+  { x: 1700, y: 497, review: 'checked' },
   { x: 1850, y: 508, review: 'checked' },
   { x: 2050, y: 506, review: 'checked' },
 ];
