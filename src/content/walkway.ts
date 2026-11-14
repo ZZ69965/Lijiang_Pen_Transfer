@@ -48,13 +48,17 @@ export const WALKWAY: readonly FootlinePoint[] = [
   { x: 700, y: 505, review: 'checked' },
   { x: 900, y: 505, review: 'checked' },
   { x: 1050, y: 504, review: 'checked' },
-  { x: 1150, y: 496, review: 'checked' },
-  // Bridge ascent: the painted parapet stands in front of the deck walker.
-  { x: 1230, y: 462, review: 'pending', foreground: true },
-  { x: 1300, y: 412, review: 'pending', foreground: true },
+  { x: 1200, y: 462, review: 'checked' },
+  // 阳桥 deck: measured off a 4x grid crop. The walkable deck line (the stone
+  // course the balustrade stands on) runs y~425 at the left base, crowns at
+  // y~400 near x=1340 and returns to y~425 by x=1450. The arch springing and
+  // the piers below are NOT ground — walking there put the figure in the river.
+  { x: 1240, y: 427, review: 'pending', foreground: true },
+  { x: 1290, y: 409, review: 'pending', foreground: true },
   { x: 1340, y: 400, review: 'pending', foreground: true },
-  { x: 1420, y: 412, review: 'pending', foreground: true },
-  { x: 1500, y: 462, review: 'pending', foreground: true },
+  { x: 1390, y: 409, review: 'pending', foreground: true },
+  { x: 1450, y: 427, review: 'pending', foreground: true },
+  { x: 1500, y: 470, review: 'checked' },
   { x: 1560, y: 500, review: 'checked' },
   { x: 1700, y: 508, review: 'checked' },
   { x: 1850, y: 508, review: 'checked' },
@@ -132,6 +136,16 @@ export function footlineReviewAt(x: number): { review: FootlineReview; foregroun
     foreground: Boolean(segment.a.foreground || segment.b.foreground),
   };
 }
+
+/**
+ * 阳桥 parapet overlay, measured off `scene-day.webp` on a 3x grid crop:
+ * the railing band (finials, posts, balusters, deck course) occupies
+ * x 1130-1590, y 368-434 — the bottom edge covers the stone course the
+ * walker's feet rest on, so feet are hidden behind the rail as they should be.
+ * The artwork itself is untouched — this is a separate transparent PNG cut from
+ * the same pixels, drawn ABOVE the walker so the deck reads as "behind the rail".
+ */
+export const YANG_BRIDGE_PARAPET = { x: 1130, y: 368, width: 460, height: 66 } as const;
 
 export function isWalkable(x: number): boolean {
   return WALKABLE_SPANS.some((span) => x >= span.from && x <= span.to);

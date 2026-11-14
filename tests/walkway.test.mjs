@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   WALKWAY, WALKABLE_SPANS, footlineReviewAt, walkwayY, clampHeroX, isWalkable,
-  HERO_HEIGHT, HERO_SCALE, HERO_REFERENCE_PIXEL_HEIGHT, HERO_MIN_X, HERO_MAX_X,
+  HERO_HEIGHT, HERO_SCALE, HERO_REFERENCE_PIXEL_HEIGHT, HERO_MIN_X, HERO_MAX_X, YANG_BRIDGE_PARAPET,
 } from '../src/content/walkway.ts';
 import { WORLD_WIDTH, WORLD_HEIGHT, PLACES } from '../src/content/places.ts';
 
@@ -108,5 +108,28 @@ test('each landmark carries a framed zoom and a waterline for local motion', () 
     const ground = walkwayY(place.standX);
     assert.ok(place.waterY >= ground, `${place.id} water ${place.waterY} is below ground ${ground}`);
     assert.ok(place.waterY <= WORLD_HEIGHT - 20, `${place.id} waterline stays above the scroll edge`);
+  }
+});
+
+test('阳桥 parapet overlay lines up with the deck it is supposed to occlude', () => {
+  // The overlay is a real cut from scene-day.webp; if the deck data drifts away
+  // from it, the walker will either float above the rail or sink below it.
+  const { x, y, width, height } = YANG_BRIDGE_PARAPET;
+  // Sample only the deck span the parapet actually covers (the overlay starts a
+  // little before the deck does, on the approach ramp).
+  const left = 1250;
+  const right = 1440;
+  for (const px of [left, (left + right) / 2, right]) {
+    const deck = walkwayY(px);
+    // The walker's feet sit ON the deck line, which must fall inside the
+    // overlay's vertical band (rail top .. deck course).
+    assert.ok(deck >= y && deck <= y + height,
+      `x=${px} deck ${deck.toFixed(1)} must sit inside the parapet band ${y}..${y + height}`);
+    assert.equal(footlineReviewAt(px).foreground, true, `x=${px} is behind the parapet`);
+  }
+  // Outside the span the person is on open bank, with nothing in front.
+  for (const px of [x - 120, x + width + 120]) {
+    if (!isWalkable(px)) continue;
+    assert.equal(footlineReviewAt(px).foreground, false, `x=${px} is not behind the rail`);
   }
 });

@@ -1,5 +1,6 @@
 import { Application, Assets, Container, Graphics, Sprite, Texture } from 'pixi.js';
 import { ENCOUNTERS, type EncounterId } from '../content/encounters';
+import { SCENES } from '../content/assets';
 import { NightEffects, type NightControls } from './NightEffects';
 import type { NightMusic } from './NightMusic';
 import {
@@ -10,7 +11,7 @@ import {
   ALL_ASSETS, assetKey, planAssets, resolvePose, type Pose, type PlannedAsset,
 } from '../content/assets';
 import {
-  HERO_HEIGHT, HERO_SCALE, clampHeroX, footlineReviewAt, walkwayY,
+  HERO_HEIGHT, HERO_SCALE, YANG_BRIDGE_PARAPET, clampHeroX, footlineReviewAt, walkwayY,
 } from '../content/walkway';
 import {
   cameraAround, centreOf, clampZoom, fitZoom, isDrag, resizeCamera, zoomBounds,
@@ -97,6 +98,13 @@ export class ScrollEngine {
   private readonly ambientLayer = new Graphics();
   private zoomInitial = 1;
   private contactShadow: Sprite | null = null;
+  /**
+   * Optional painted PARAPET of 阳桥, drawn ABOVE the walker so someone on the
+   * deck passes behind the balustrade instead of in front of it. Purely
+   * decorative: if it fails to load the painting stays fully usable.
+   */
+  private foreground: Sprite | null = null;
+  private readonly foregroundTextures = new Map<ArtworkVariant, Texture>();
   private time: TimeOfDay = 'morning';
   private nightControls: NightControls = { view: 'shore', lights: false, rhythm: false, music: false, drones: false };
   private heroX = 260;
@@ -221,6 +229,41 @@ export class ScrollEngine {
     this.world.addChildAt(sprite, 0);
   }
 
+  /**
+   * Non-fatal decorative overlay; failures only log.
+   *
+   * Each painting has its own lit version of the same railing (day stone, dusk
+   * warmth, night lanterns), so a day cut pasted over the night painting would
+   * look wrong. All three are cut from the same world rectangle.
+   */
+  private async loadForeground(): Promise<void> {
+    const files: Record<ArtworkVariant, string> = {
+      day: 'foreground-yangbridge.png',
+      dusk: 'foreground-yangbridge-dusk.png',
+      night: 'foreground-yangbridge-night.png',
+    };
+    for (const variant of SCENES) {
+      try {
+        const texture = await Assets.load<Texture>(art(files[variant]));
+        if (this.disposed || !this.ready) return;
+        this.foregroundTextures.set(variant, texture);
+      } catch {
+        // The parapet is an enhancement, never a requirement.
+      }
+    }
+    if (this.disposed || !this.ready || this.foreground) return;
+    const first = this.foregroundTextures.get(artworkForTime(this.time)) ??
+      this.foregroundTextures.values().next().value;
+    if (!first) return;
+    const sprite = new Sprite(first);
+    // Measured off the paintings: the railing band spans x 1130-1590,
+    // y 368-434. Native size — the artwork is never stretched.
+    sprite.position.set(YANG_BRIDGE_PARAPET.x, YANG_BRIDGE_PARAPET.y);
+    sprite.visible = this.walkerVisible;
+    this.foreground = sprite;
+    this.world.addChild(sprite);
+  }
+
   private buildWorld(): void {
     this.addMarkers();
     this.addEncounterMarkers();
@@ -253,6 +296,7 @@ export class ScrollEngine {
     this.world.addChild(this.ripplesLayer);
     this.app.stage.addChild(this.world);
     this.app.ticker.add(this.tick);
+    void this.loadForeground();
   }
 
   destroy(): void {
@@ -816,6 +860,13 @@ export class ScrollEngine {
       this.hero.position.set(this.heroX, ground + bob);
       this.hero.scale.x = Math.abs(this.hero.scale.x) * this.facing;
       this.hero.visible = this.walkerVisible;
+      // With no walker there is nothing to occlude, so the overlay stays hidden
+      // and the painting is shown exactly as painted.
+      if (this.foreground) {
+        this.foreground.visible = this.walkerVisible;
+        const wanted = this.foregroundTextures.get(artworkForTime(this.time));
+        if (wanted && this.foreground.texture !== wanted) this.foreground.texture = wanted;
+      }
       if (this.contactShadow) {
         // Kept on the ground line (no bob) so the shadow reads as the feet's
         // contact patch; narrower in the bridge shade where light is diffuse.
