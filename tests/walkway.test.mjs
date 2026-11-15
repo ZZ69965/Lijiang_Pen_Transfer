@@ -121,10 +121,12 @@ test('阳桥 parapet overlay lines up with the deck it is supposed to occlude', 
   const right = 1440;
   for (const px of [left, (left + right) / 2, right]) {
     const deck = walkwayY(px);
-    // The walker's feet sit ON the deck line, which must fall inside the
-    // overlay's vertical band (rail top .. deck course).
-    assert.ok(deck >= y && deck <= y + height,
-      `x=${px} deck ${deck.toFixed(1)} must sit inside the parapet band ${y}..${y + height}`);
+    // Feet belong on the deck COURSE, i.e. in the lower part of the parapet
+    // band. Putting them on the rail crown left the boots poking out beneath
+    // the balustrade.
+    const deckCourse = y + height;
+    assert.ok(deck >= deckCourse - 8 && deck <= deckCourse,
+      `x=${px} deck ${deck.toFixed(1)} must rest on the deck course near ${deckCourse}`);
     assert.equal(footlineReviewAt(px).foreground, true, `x=${px} is behind the parapet`);
   }
   // Outside the span the person is on open bank, with nothing in front.

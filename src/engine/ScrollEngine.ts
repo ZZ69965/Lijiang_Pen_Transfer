@@ -267,6 +267,7 @@ export class ScrollEngine {
     sprite.position.set(YANG_BRIDGE_PARAPET.x, YANG_BRIDGE_PARAPET.y);
     sprite.visible = this.walkerVisible;
     this.foreground = sprite;
+    // Always above the walker, regardless of which finished loading first.
     this.world.addChild(sprite);
   }
 
@@ -783,6 +784,18 @@ export class ScrollEngine {
   }
 
   /** Exposed for QA/tests: the segment the walker is standing on. */
+  /** Diagnostics for QA scripts; not used by the UI. */
+  describeLayers(): Record<string, unknown> {
+    return {
+      heroY: this.hero ? Math.round(this.hero.y) : null,
+      heroVisible: this.hero?.visible ?? null,
+      foregroundVisible: this.foreground?.visible ?? null,
+      heroIndex: this.hero ? this.world.getChildIndex(this.hero) : null,
+      foregroundIndex: this.foreground ? this.world.getChildIndex(this.foreground) : null,
+      walkerVisible: this.walkerVisible,
+    };
+  }
+
   footlineInfo(): { review: string; foreground: boolean } {
     return footlineReviewAt(this.heroX);
   }

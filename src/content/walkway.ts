@@ -53,11 +53,13 @@ export const WALKWAY: readonly FootlinePoint[] = [
   // course the balustrade stands on) runs y~425 at the left base, crowns at
   // y~400 near x=1340 and returns to y~425 by x=1450. The arch springing and
   // the piers below are NOT ground — walking there put the figure in the river.
-  { x: 1240, y: 427, review: 'pending', foreground: true },
-  { x: 1290, y: 409, review: 'pending', foreground: true },
-  { x: 1340, y: 400, review: 'pending', foreground: true },
-  { x: 1390, y: 409, review: 'pending', foreground: true },
-  { x: 1450, y: 427, review: 'pending', foreground: true },
+  // Feet rest on the deck COURSE (~y 431), not on the rail crown (~400): standing
+  // on the crown left the boots poking out below the balustrade.
+  { x: 1240, y: 431, review: 'pending', foreground: true },
+  { x: 1290, y: 431, review: 'pending', foreground: true },
+  { x: 1340, y: 431, review: 'pending', foreground: true },
+  { x: 1390, y: 431, review: 'pending', foreground: true },
+  { x: 1450, y: 431, review: 'pending', foreground: true },
   // Right landing: the deck keeps its y~428 course out to x~1600, then the
   // painted steps drop to the bank. Anything below y~430 here is the pier /
   // open water, which is where an earlier guess put the walker.

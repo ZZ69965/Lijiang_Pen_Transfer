@@ -66,6 +66,9 @@ const ScrollStage = forwardRef<StageHandle, StageProps>(function ScrollStage(pro
       onLoadStatus: (status) => latest.current.onLoadStatus?.(status),
     });
     engineRef.current = engine;
+    // QA hook: lets the browser suite assert real layer order instead of
+    // eyeballing pixels. Only populated in this stage, never used by the app.
+    (window as unknown as { __lijiangEngine?: unknown }).__lijiangEngine = engine;
     void engine.init().then(() => {
       if (engineRef.current !== engine) return;
       engine.setMode(latest.current.mode);
