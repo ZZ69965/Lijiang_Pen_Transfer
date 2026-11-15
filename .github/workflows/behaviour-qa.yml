@@ -13,6 +13,9 @@ on:
       - 'src/styles/**'
       - 'tests/**'
       - 'scripts/behaviour-smoke.mjs'
+      - 'scripts/drone-smoke.mjs'
+      - 'public/art/night-drones-*.webp'
+      - 'docs/drone-assets.json'
       - '.github/workflows/behaviour-qa.yml'
   workflow_dispatch:
 
@@ -50,6 +53,11 @@ jobs:
           CHROME_BIN: /usr/bin/google-chrome
           OUT_DIR: qa/ci
         run: node scripts/behaviour-smoke.mjs
+      - name: Uploaded drone artwork regression and screenshots
+        env:
+          CHROME_BIN: /usr/bin/google-chrome
+          OUT_DIR: qa/ci/night-drones
+        run: npm run test:drones
       - name: Upload screenshots and results
         if: always()
         uses: actions/upload-artifact@v4

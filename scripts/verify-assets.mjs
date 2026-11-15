@@ -4,6 +4,7 @@
  * Usage: npm run verify:assets
  */
 import { readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 
 const manifest = [
   ['scene-day.webp', 2172, 724, 1_500_000],
@@ -92,6 +93,31 @@ try {
 } catch (error) {
   ok = false;
   console.error(`FAIL home-background.webp: ${error.message}`);
+}
+if (!ok) process.exitCode = 1;
+
+// Uploaded drone patterns retain native dimensions, original alpha and pixels.
+const droneAssets = JSON.parse(readFileSync(new URL('../docs/drone-assets.json', import.meta.url), 'utf8'));
+for (const asset of droneAssets) {
+  try {
+    const bytes = readFileSync(new URL(`../public/art/${asset.runtime}`, import.meta.url));
+    const info = getDimensions(bytes);
+    let alpha = false;
+    for (let offset = 12; offset + 8 < bytes.length;) {
+      const chunk = bytes.toString('ascii', offset, offset + 4);
+      if (chunk === 'VP8X') alpha ||= Boolean(bytes[offset + 8] & 0x10);
+      if (chunk === 'VP8L') alpha ||= Boolean((bytes.readUInt32LE(offset + 9) >>> 28) & 1);
+      const length = bytes.readUInt32LE(offset + 4);
+      offset += 8 + length + (length % 2);
+    }
+    const good = info.width === 1280 && info.height === 720 && info.lossless && alpha &&
+      bytes.length <= 100_000 && createHash('sha256').update(bytes).digest('hex') === asset.runtimeSha256;
+    if (!good) ok = false;
+    console.log(`${good ? 'OK' : 'FAIL'} ${asset.runtime}: ${info.width}x${info.height}, ${bytes.length} bytes, lossless=${info.lossless}, alpha=${alpha}`);
+  } catch (error) {
+    ok = false;
+    console.error(`FAIL ${asset.runtime}: ${error.message}`);
+  }
 }
 if (!ok) process.exitCode = 1;
 /** New mini NPC overlays are intentionally small lossy-alpha WebP. Unlike the

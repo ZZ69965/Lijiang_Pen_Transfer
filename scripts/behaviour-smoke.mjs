@@ -256,13 +256,15 @@ try {
     await page.getByRole('menuitem', { name: /卷尾/ }).click();
     await page.waitForSelector('.elephant-variant-finale', { timeout: 20000 });
     await shot(page, 'desktop-09-finale');
-    // This headless environment has no WebGL; the finale must therefore offer a
-    // usable way back instead of a blank screen.
+    // Exercise the actual renderer when available, and the fallback otherwise.
     const fallback = page.locator('.elephant-fallback');
-    const back = fallback.count ? fallback.getByRole('button', { name: '回到画卷' })
+    await page.waitForFunction(() => document.querySelector('.elephant-fallback') ||
+      document.querySelector('canvas.elephant-canvas'), null, { timeout: 25000 });
+    const usesFallback = await fallback.isVisible();
+    const back = usesFallback ? fallback.getByRole('button', { name: '回到画卷' })
       : page.getByRole('button', { name: '返回画卷' });
     await back.waitFor({ timeout: 25000 });
-    record('finale without WebGL offers a usable way back', await back.isVisible());
+    record('finale offers a usable way back', await back.isVisible(), usesFallback ? 'WebGL fallback' : 'rendered 3D');
     await shot(page, 'desktop-09b-finale-fallback');
     await back.click();
     await page.waitForSelector('.scroll-canvas', { timeout: 20000 });
@@ -300,7 +302,7 @@ try {
     await shot(page, 'desktop-08b-night-music-stopped');
     record('concept demos are not resident in the night panel',
       (await page.locator('.night-lab[open]').count()) === 0 &&
-      (await page.locator('.night-actions > button').count()) === 1,
+      (await page.locator('.night-actions > button').count()) === 2,
       `always-visible night buttons: ${await page.locator('.night-actions > button').count()}`);
     await page.getByRole('button', { name: '关闭互动' }).click();
     await page.locator('.scene-time .time-switcher button', { hasText: '正午' }).click();
@@ -327,10 +329,22 @@ try {
     await page.getByRole('button', { name: '关闭互动' }).click();
 
     // -------------------------------------------------------- rotation check
-    const before = await page.locator('.scroll-progress').getAttribute('aria-label');
+    // The camera eases toward its target, so sample only once it has settled;
+    // comparing mid-ease made this check flap between 44/44 and 43/44.
+    const settledProgress = async () => {
+      let previous = null;
+      for (let i = 0; i < 20; i += 1) {
+        const value = await page.locator('.scroll-progress').getAttribute('aria-label');
+        if (value === previous) return value;
+        previous = value;
+        await page.waitForTimeout(150);
+      }
+      return previous;
+    };
+    const before = await settledProgress();
     await page.setViewportSize({ width: 390, height: 844 });
     await page.waitForTimeout(900);
-    const after = await page.locator('.scroll-progress').getAttribute('aria-label');
+    const after = await settledProgress();
     record('rotation keeps the viewed position', before === after, `${before} → ${after}`);
     await shot(page, 'desktop-11-rotated-portrait');
 

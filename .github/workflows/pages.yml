@@ -119,4 +119,9 @@ jobs:
             exit 1
           fi
           echo "OK original music MP3: ${AUDIO_SIZE} bytes"
+          echo "Checking uploaded transparent drone artworks"
+          for NAME in night-drones-elephant night-drones-festival; do
+            curl --fail-with-body --location --retry 5 --retry-delay 3 --retry-all-errors \
+              --silent --show-error "${PAGE_URL%/}/art/${NAME}.webp" -o "/tmp/${NAME}.webp"
+          done
           echo "HTTP smoke test passed"

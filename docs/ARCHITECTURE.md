@@ -43,7 +43,7 @@ ScrollEngine.ts [Pixi Application + 世界坐标 + 相机 + 角色 + 水纹 + �
 
 体验时段：`morning/noon/dusk/night`，原始背景三幅：`day/day/dusk/night`。分别使用 `artworkForTime()` 数据函数，不重复创建贴图；剧情列表位于 `src/content/encounters.ts`，提供静态位置、选择与行为。Pixi Graphics 热区触发 `onEncounter(id)` → React 对话，不应把 JSX 拼入 Pixi ticker。
 
-夜间镜头/灯光/无人机/倒影节拍由独立数值参数控制；当前没有合法可用音频，`setAudioEnergy` 是预留 API，节拍模拟必须被明确称作「静音节奏预览」。制作正式版本需要独立 night-effects 模块和 Web Audio AnalyserNode。详见 `docs/INTERACTION_PLAN.md`。
+夜间镜头、灯光与倒影节拍由独立数值参数控制；`NightMusic` 已将原创器乐的实际频谱接入 `setAudioEnergy`。无音频的程序节拍仍明确称作「静音节奏预览」，正式山歌人声尚未到位。详见 `docs/INTERACTION_PLAN.md`。
 
 **已完成演示接口**：`src/engine/NightEffects.ts` 是独立的轻量矢量光效图层，支持 `{view, lights, rhythm, drones}` 与未来真实音频能量输入 `setAudioEnergy(0..1)`；`src/app/ScrollStage.tsx` 桥接状态，`App.tsx` 提供可访问选项。夜间纹理始终用原幅 `scene-night.webp`，特效不会修改图片文件。
 
@@ -74,6 +74,12 @@ src/app/FishMarket       只看阶段 UI，逻辑全在 content/market.ts
 - 切换时辰时若目标画卷未到，**保留当前画卷**继续显示，绝不淡入空白画布。
 - 输入所有权唯一：`inputLocked`（对话/指南/过场）时引擎清空按键与指针并拒绝新行走。
 - 快照只存"位置与结果"，从不保存"正在按住行走"或"正在播放"。
+
+## 用户无人机画稿层（2026-11-15）
+
+`content/droneArtworks.ts` 记录两张画稿与原幅比例；`engine/NightDroneShow.ts` 管理独立 Pixi Container、按需纹理缓存、淡入与取消过期请求。`ScrollEngine` 将其放在原画上方并按视口适配，通过 `LoadStatus.drone` 只回传离散加载状态，不逐帧更新 React。
+
+`App` 在夜游中提供一个「欣赏无人机画稿」入口；进入时收起大卡片，使用一张紧凑的切换/收起工具条。只有入夜且夜景纹理可用时显示图片；切时辰、换景、重播/卷尾、返回首页都会收起，卸载后晚到的请求不得重建画面。Escape 收起并将焦点还给故事入口；减少动画时静态显示。原有 59 个程序化光点已移除。此为二维用户画稿展示，不包含飞行轨迹或演出复原。
 
 ## 独立 Three.js 场景（M0.4）
 

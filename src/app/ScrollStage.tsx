@@ -4,6 +4,7 @@ import type { NightMusic } from '../engine/NightMusic';
 import type { PlaceId, TimeOfDay, VisitMode } from '../content/places';
 import type { EncounterId, NightView } from '../content/encounters';
 import type { SceneSnapshot } from '../content/snapshot';
+import type { DroneArtworkId } from '../content/droneArtworks';
 
 export type StageProps = {
   mode: VisitMode;
@@ -14,6 +15,7 @@ export type StageProps = {
   nightLights: boolean;
   nightRhythm: boolean;
   nightDrones: boolean;
+  droneArtwork: DroneArtworkId;
   musicPlaying: boolean;
   musicController: NightMusic | null;
   previewNumber: number;
@@ -37,6 +39,7 @@ export type StageProps = {
 /** Imperative handle so App can capture the live view right before unmounting. */
 export type StageHandle = {
   captureView: () => Pick<SceneSnapshot, 'heroX' | 'facing' | 'cameraCentre' | 'zoom'> | null;
+  retryDroneArtwork: () => void;
 };
 
 const ScrollStage = forwardRef<StageHandle, StageProps>(function ScrollStage(props, ref) {
@@ -68,7 +71,7 @@ const ScrollStage = forwardRef<StageHandle, StageProps>(function ScrollStage(pro
       engine.setMode(latest.current.mode);
       engine.setWalkerVisible(latest.current.mode === 'guided');
       engine.setTimeOfDay(latest.current.time);
-      engine.setNightControls({ view: latest.current.nightView, lights: latest.current.nightLights, rhythm: latest.current.nightRhythm, music: latest.current.musicPlaying, drones: latest.current.nightDrones });
+      engine.setNightControls({ view: latest.current.nightView, lights: latest.current.nightLights, rhythm: latest.current.nightRhythm, music: latest.current.musicPlaying, drones: latest.current.nightDrones, droneArtwork: latest.current.droneArtwork });
       engine.setMusicController(latest.current.musicController);
       engine.setInteractionLocked(latest.current.inputLocked);
       // Returning from the prologue/finale: restore the exact view; otherwise
@@ -92,8 +95,8 @@ const ScrollStage = forwardRef<StageHandle, StageProps>(function ScrollStage(pro
   }, [props.mode]);
   useEffect(() => { engineRef.current?.setTimeOfDay(props.time); }, [props.time]);
   useEffect(() => {
-    engineRef.current?.setNightControls({ view: props.nightView, lights: props.nightLights, rhythm: props.nightRhythm, music: props.musicPlaying, drones: props.nightDrones });
-  }, [props.nightView, props.nightLights, props.nightRhythm, props.nightDrones, props.musicPlaying]);
+    engineRef.current?.setNightControls({ view: props.nightView, lights: props.nightLights, rhythm: props.nightRhythm, music: props.musicPlaying, drones: props.nightDrones, droneArtwork: props.droneArtwork });
+  }, [props.nightView, props.nightLights, props.nightRhythm, props.nightDrones, props.musicPlaying, props.droneArtwork]);
   useEffect(() => { engineRef.current?.setMusicController(props.musicController); }, [props.musicController]);
   useEffect(() => {
     if (props.previewNumber) engineRef.current?.previewEncounter(props.previewId);
@@ -110,6 +113,7 @@ const ScrollStage = forwardRef<StageHandle, StageProps>(function ScrollStage(pro
 
   useImperativeHandle(ref, () => ({
     captureView: () => engineRef.current?.captureView() ?? null,
+    retryDroneArtwork: () => engineRef.current?.retryDroneArtwork(),
   }), []);
 
   return <div ref={container} className="scroll-stage" />;

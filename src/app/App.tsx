@@ -12,6 +12,7 @@ import { createSnapshot, type SceneSnapshot } from '../content/snapshot';
 import { applyMarketAction, createMarketSession, type MarketAction } from '../content/market';
 import type { LoadStatus } from '../engine/ScrollEngine';
 import { AudioIntentQueue } from '../content/async';
+import { DRONE_ARTWORKS, getDroneArtwork, type DroneArtworkId } from '../content/droneArtworks';
 
 const art = (name: string) => `${import.meta.env.BASE_URL}art/${name}`;
 
@@ -43,6 +44,7 @@ export default function App() {
   const [nightLights, setNightLights] = useState(false);
   const [nightRhythm, setNightRhythm] = useState(false);
   const [nightDrones, setNightDrones] = useState(false);
+  const [droneArtwork, setDroneArtwork] = useState<DroneArtworkId>('elephant');
   const [musicPlaying, setMusicPlaying] = useState(false);
   const [musicError, setMusicError] = useState('');
   const [musicController, setMusicController] = useState<NightMusic | null>(null);
@@ -53,6 +55,8 @@ export default function App() {
   /** Saved painting position, restored after the prologue/finale returns. */
   const [snapshot, setSnapshot] = useState<SceneSnapshot | null>(null);
   const stageRef = useRef<StageHandle | null>(null);
+  const droneSelectRef = useRef<HTMLSelectElement | null>(null);
+  const storyEntryRef = useRef<HTMLButtonElement | null>(null);
   const [loadStatus, setLoadStatus] = useState<LoadStatus | null>(null);
   // R2: only one card may be open at a time, and nothing is resident by default.
   const [placeCard, setPlaceCard] = useState(false);
@@ -129,6 +133,7 @@ export default function App() {
   };
 
   const leavePainting = () => {
+    setNightDrones(false);
     silenceMusic();
     setWalking(0);
     setActiveEncounter(null);
@@ -139,6 +144,7 @@ export default function App() {
   };
 
   const selectTime = (next: TimeOfDay) => {
+    setNightDrones(false);
     setMore(false);
     setStoryOpen(false);
     setPlaceCard(false);
@@ -148,6 +154,7 @@ export default function App() {
   };
 
   const openEncounter = (id: EncounterId) => {
+    setNightDrones(false);
     setPlaceCard(false);
     setStoryOpen(false);
     const encounter = findEncounter(id);
@@ -203,7 +210,17 @@ export default function App() {
    */
   const stories = encountersFor(time);
 
+  const closeDroneArtwork = () => {
+    setNightDrones(false);
+    requestAnimationFrame(() => storyEntryRef.current?.focus({ preventScroll: true }));
+  };
+
+  useEffect(() => {
+    if (nightDrones && time === 'night') droneSelectRef.current?.focus({ preventScroll: true });
+  }, [nightDrones, time]);
+
   const navigatePlace = (id: PlaceId) => {
+    setNightDrones(false);
     setWalking(0);
     setPlace(id);
     // Exactly one card at a time: switching place closes the story and the
@@ -216,13 +233,14 @@ export default function App() {
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
+        if (nightDrones) closeDroneArtwork();
         if (activeEncounter) closeEncounter();
         if (help) setHelp(false);
       }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [activeEncounter, help]);
+  }, [activeEncounter, help, nightDrones]);
 
   // Leaving the tab hides the painting: stop sound and release the walker so
   // nothing keeps running (or keeps sounding) while the visitor is away.
@@ -270,6 +288,7 @@ export default function App() {
   };
   /** "重看象山序章": the painting unmounts, so remember exactly where we were. */
   const replayIntro = () => {
+    setNightDrones(false);
     captureSnapshot();
     silenceMusic();
     setWalking(0);
@@ -279,6 +298,7 @@ export default function App() {
   };
   /** Finale: snapshot first; returning restores the 4th-scene view. */
   const startFinale = () => {
+    setNightDrones(false);
     captureSnapshot();
     silenceMusic();
     setActiveEncounter(null);
@@ -382,6 +402,7 @@ export default function App() {
     <main className="experience">
       <ScrollStage ref={stageRef} mode={mode} time={time} target={place} walking={walking}
         nightView={nightView} nightLights={nightLights} nightRhythm={nightRhythm} nightDrones={nightDrones}
+        droneArtwork={droneArtwork}
         musicPlaying={musicPlaying} musicController={musicController}
         previewId={previewId} previewNumber={previewNumber}
         actionNumber={actionNumber} actionType={actionType}
@@ -415,7 +436,7 @@ export default function App() {
       </header>
       {stories.length > 0 && (
         <div className="story-entry">
-          <button type="button" aria-expanded={storyOpen} aria-haspopup="menu"
+          <button ref={storyEntryRef} type="button" aria-expanded={storyOpen} aria-haspopup="menu"
             onClick={() => { setStoryOpen((open) => !open); setPlaceCard(false); }}>
             画中故事 <span aria-hidden="true">{stories.length}</span>
           </button>
@@ -452,6 +473,14 @@ export default function App() {
               <p className="night-note" role="status">
                 {musicPlaying ? '原创器乐播放中，水面倒影随实时频谱变化。' : '点击开始后播放项目专门创作的器乐，倒影随声音变化。'}此器乐并非传统山歌录音。
               </p>
+              <button type="button" className="night-drones-button" disabled={!loadStatus?.currentSceneReady}
+                onClick={() => {
+                  closeEncounter();
+                  setMore(false);
+                  setWalking(0);
+                  setNightView('shore');
+                  setNightDrones(true);
+                }}>欣赏无人机画稿</button>
               {musicError && <p className="music-error" role="alert">{musicError}</p>}
               {/* Concept demos are not product surface: they wait behind a disclosure. */}
               <details className="night-lab">
@@ -466,10 +495,7 @@ export default function App() {
                   {nightRhythm ? '◉ 关闭静音节奏预览' : '♫ 静音节奏预览'}
                 </button>
                 <button onClick={() => trigger('song')}>♫ 对山歌姿态（无演唱）</button>
-                <button onClick={() => setNightDrones((value) => !value)} aria-pressed={nightDrones}>
-                  {nightDrones ? '◉ 关闭无人机光点' : '✧ 无人机概念光点'}
-                </button>
-                <small>灯组、节拍、山歌与无人机均为概念演示；正式录音与动作素材未到位。</small>
+                <small>灯组、节拍与山歌姿态为概念演示；正式录音与动作素材未到位。</small>
               </details>
             </div>
           ) : activeEncounter === 'fishmarket' ? (
@@ -483,6 +509,26 @@ export default function App() {
           )}
           {encounterReply && <p className="encounter-reply" role="status">{encounterReply}</p>}
           <small className="encounter-disclaimer">{findEncounter(activeEncounter).detail}</small>
+        </section>
+      )}
+      {time === 'night' && nightDrones && (
+        <section className="drone-viewer" role="region" aria-label="无人机画稿欣赏"
+          data-artwork={droneArtwork} data-load-state={loadStatus?.drone.state ?? 'loading'}>
+          <div className="drone-viewer-controls">
+            <label>无人机画稿
+              <select ref={droneSelectRef} aria-label="选择无人机画稿" value={droneArtwork}
+                onChange={(event) => setDroneArtwork(event.target.value as DroneArtworkId)}>
+                {DRONE_ARTWORKS.map((artwork) => <option key={artwork.id} value={artwork.id}>{artwork.title}</option>)}
+              </select>
+            </label>
+            <button type="button" onClick={closeDroneArtwork} aria-label="收起无人机画稿">收起</button>
+          </div>
+          <p role="status">
+            {loadStatus?.drone.state === 'error' ? '画稿暂未载入，夜景仍可继续游览。'
+              : loadStatus?.drone.state !== 'ready' ? '正在载入画稿…' : getDroneArtwork(droneArtwork).note}
+          </p>
+          {loadStatus?.drone.state === 'error' && <button type="button"
+            onClick={() => stageRef.current?.retryDroneArtwork()}>重试载入画稿</button>}
         </section>
       )}
       {placeCard && (
@@ -504,6 +550,7 @@ export default function App() {
             aria-current={item.id === place ? 'location' : undefined}
             aria-expanded={item.id === place ? placeCard : undefined}
             onClick={() => {
+              setNightDrones(false);
               if (item.id === place) { setPlaceCard((open) => !open); setStoryOpen(false); return; }
               navigatePlace(item.id);
             }}>
@@ -539,7 +586,7 @@ export default function App() {
           <h2>游目指南</h2>
           <p>用鼠标或手指左右拖动画卷；滚轮或双指可缩放。按住左右箭头，或使用键盘 ← → / A D，让画中人沿岸行走。</p>
           <p>切换「清晨」「正午」「夕照」「入夜」会选择对应高清原画，其中清晨和正午共用白昼原画。点击画中的人物与金色发现点，或使用左上方的「画中故事」入口打开互动；底部路线可切换景点，左下可随时切换漫游/导览。</p>
-          <p className="help-note">当前版本使用原幅无损画卷、四张新绘制的透明交互插画，以及项目专门创作的器乐示范音轨。夜间「播放原创器乐」可用真实频谱驱动水面反射；静音节奏预览仍独立可用。渔人整理竹筏、鸬鹚潜水和对山歌人声尚无完整动画与正式演唱，无人机光点属于虚拟概念演示。</p>
+          <p className="help-note">当前版本使用原幅无损画卷、透明交互插画及项目原创器乐。入夜可从画中故事打开夜游，点击「欣赏无人机画稿」切换两张用户供图；这是图案概念展示，不是演出实录或飞行仿真。主题画稿保留原图活动文字与日期。渔人整理竹筏、鸬鹚潜水和对山歌人声尚无完整动画与正式演唱。</p>
         </section>
       </div>}
     </main>

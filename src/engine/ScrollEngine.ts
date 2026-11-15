@@ -2,6 +2,8 @@ import { Application, Assets, Container, Graphics, Sprite, Texture } from 'pixi.
 import { ENCOUNTERS, type EncounterId } from '../content/encounters';
 import { SCENES } from '../content/assets';
 import { NightEffects, type NightControls } from './NightEffects';
+import { NightDroneShow } from './NightDroneShow';
+import type { DroneArtworkStatus } from '../content/droneArtworks';
 import type { NightMusic } from './NightMusic';
 import {
   PLACES, WORLD_HEIGHT, WORLD_WIDTH, artworkForTime,
@@ -27,6 +29,7 @@ export type LoadStatus = {
   loading: string[];
   /** Human labels of optional assets that failed; the painting stays usable. */
   failed: string[];
+  drone: DroneArtworkStatus;
 };
 
 type EngineCallbacks = {
@@ -78,6 +81,7 @@ export class ScrollEngine {
   private readonly encounterSprites = new Map<EncounterId, Sprite>();
   private readonly encounterLayer = new Container();
   private readonly nightEffects = new NightEffects();
+  private readonly droneShow: NightDroneShow;
   private music: NightMusic | null = null;
   private readonly ripplesLayer = new Graphics();
   private readonly activePointers = new Map<number, Point>();
@@ -106,7 +110,7 @@ export class ScrollEngine {
   private foreground: Sprite | null = null;
   private readonly foregroundTextures = new Map<ArtworkVariant, Texture>();
   private time: TimeOfDay = 'morning';
-  private nightControls: NightControls = { view: 'shore', lights: false, rhythm: false, music: false, drones: false };
+  private nightControls: NightControls = { view: 'shore', lights: false, rhythm: false, music: false, drones: false, droneArtwork: 'elephant' };
   private heroX = 260;
   private facing: 1 | -1 = 1;
   private walkDirection = 0;
@@ -133,6 +137,7 @@ export class ScrollEngine {
   constructor(host: HTMLDivElement, callbacks: EngineCallbacks) {
     this.host = host;
     this.callbacks = callbacks;
+    this.droneShow = new NightDroneShow(() => this.emitStatus());
     this.viewSize = { width: host.clientWidth || 1, height: host.clientHeight || 1 };
   }
 
@@ -227,6 +232,7 @@ export class ScrollEngine {
     this.backgrounds.set(variant, sprite);
     // Paintings sit at the very bottom of the world.
     this.world.addChildAt(sprite, 0);
+    this.syncDroneArtwork();
   }
 
   /**
@@ -268,6 +274,7 @@ export class ScrollEngine {
     this.addMarkers();
     this.addEncounterMarkers();
     this.world.addChild(this.nightEffects.graphics);
+    this.world.addChild(this.droneShow.container);
     this.world.addChild(this.ambientLayer);
     this.world.addChild(this.markers);
     this.world.addChild(this.encounterLayer);
@@ -301,6 +308,7 @@ export class ScrollEngine {
 
   destroy(): void {
     this.disposed = true;
+    this.droneShow.dispose();
     if (!this.ready) return;
     const canvas = this.app.canvas;
     canvas.removeEventListener('pointerdown', this.onPointerDown);
@@ -332,6 +340,7 @@ export class ScrollEngine {
       currentSceneReady: this.readyScenes.has(artworkForTime(this.time)),
       loading,
       failed: [...this.failedLabels],
+      drone: this.droneShow.status,
     });
   }
 
@@ -446,6 +455,7 @@ export class ScrollEngine {
 
   setNightControls(next: NightControls): void {
     const viewChanged = this.nightControls.view !== next.view;
+    const artworkChanged = next.drones && (!this.nightControls.drones || next.droneArtwork !== this.nightControls.droneArtwork);
     this.nightControls = next;
     if (this.time === 'night' && viewChanged) {
       // Reframe the painted river around the boat; the mode remains a viewing
@@ -453,8 +463,17 @@ export class ScrollEngine {
       const targetX = next.view === 'boat' ? 1798 : 1326;
       this.cameraTarget = targetX - this.host.clientWidth / (2 * this.zoom);
     }
+    this.syncDroneArtwork();
+    if (this.time === 'night' && artworkChanged) this.focusPlace('glassbridge', true);
     this.applyCamera();
   }
+
+  private syncDroneArtwork(): void {
+    const visible = this.time === 'night' && this.readyScenes.has('night') && this.nightControls.drones;
+    this.droneShow.setArtwork(visible ? this.nightControls.droneArtwork : null);
+  }
+
+  retryDroneArtwork(): void { this.droneShow.retry(); }
 
   /** Attach audio analysis without passing each-frame values through React. */
   setMusicController(controller: NightMusic | null): void {
@@ -626,6 +645,7 @@ export class ScrollEngine {
     const boatPreview = this.time === 'night' && this.nightControls.view === 'boat';
     const drift = boatPreview && !this.reducedMotion ? Math.sin(this.elapsed * 1.25) * 2.1 : 0;
     this.world.position.set(-this.cameraLeft * this.zoom, (this.host.clientHeight - WORLD_HEIGHT * this.zoom) / 2 + (boatPreview ? 19 : 0) + drift);
+    this.droneShow.layout(this.viewSize.width, this.viewSize.height, this.zoom, this.world.y);
     const fraction = Math.max(0, Math.min(1, (this.cameraLeft + visibleWidth / 2) / WORLD_WIDTH));
     if (Math.abs(fraction - this.lastProgress) > 0.003) {
       this.lastProgress = fraction;
@@ -663,6 +683,7 @@ export class ScrollEngine {
   setTimeOfDay(time: TimeOfDay): void {
     const changed = this.time !== time;
     this.time = time;
+    this.syncDroneArtwork();
     this.updateEncounterVisibility();
     this.applyCamera();
     if (!changed) return;
@@ -817,6 +838,7 @@ export class ScrollEngine {
     this.elapsed += dt;
     this.nightEffects.setAudioEnergy(this.time === 'night' && this.music ? this.music.sampleEnergy() : 0);
     this.nightEffects.draw(dt, this.time === 'night', this.nightControls, this.reducedMotion);
+    this.droneShow.update(dt, this.reducedMotion);
     // Only the raft-on-water and lantern boat receive a subtle floating motion.
     for (const id of ['cormorant', 'night-stage'] as const) {
       const sprite = this.encounterSprites.get(id);

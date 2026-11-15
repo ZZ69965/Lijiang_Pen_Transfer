@@ -1,0 +1,26 @@
+[
+  {
+    "source": "6da5ad4f39916ebd4de54d79bfbb2070.png",
+    "sourceSha256": "17c4a999b993dca0c79832997dee81d757dc1ed34968bb93bb4c9dd20d36e49d",
+    "runtime": "night-drones-elephant.webp",
+    "runtimeSha256": "5b7fcaab00e9e40e3293ee1ffbabb0626caf3c8c7f65db83b7ef7891d0c9a914",
+    "bytes": 59230,
+    "size": [
+      1280,
+      720
+    ],
+    "rgbaPixelEqual": true
+  },
+  {
+    "source": "3f0f0acbae77827c1786ca0b1b674abf.png",
+    "sourceSha256": "8cf32d860d23320aaf094149a35da0e3c6ab1f512d9cd5d2785251d7559551f1",
+    "runtime": "night-drones-festival.webp",
+    "runtimeSha256": "b7cf7b9e13b18da9705bf5aec4ccf61d32707b5c9e9e2de9378c5a8cc3297b0f",
+    "bytes": 63142,
+    "size": [
+      1280,
+      720
+    ],
+    "rgbaPixelEqual": true
+  }
+]

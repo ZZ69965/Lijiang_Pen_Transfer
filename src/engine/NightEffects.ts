@@ -1,5 +1,6 @@
 import { Graphics } from 'pixi.js';
 import type { NightView } from '../content/encounters';
+import type { DroneArtworkId } from '../content/droneArtworks';
 
 export type NightControls = {
   view: NightView;
@@ -7,6 +8,7 @@ export type NightControls = {
   rhythm: boolean;
   music: boolean;
   drones: boolean;
+  droneArtwork: DroneArtworkId;
 };
 
 type Lamp = { x: number; y: number };
@@ -68,18 +70,7 @@ export class NightEffects {
       }
     }
 
-    if (controls.drones) {
-      // Abstract mountain-shaped dots, conceptual sequence only; NOT a real drone-show record.
-      const float = reducedMotion ? 0 : Math.sin(this.elapsed * 0.7) * 5;
-      for (let i = 0; i < 59; i += 1) {
-        const fraction = i / 58;
-        const peak = Math.pow(Math.sin(Math.PI * fraction * 3), 2);
-        const x = 1465 + fraction * 410;
-        const y = 216 - peak * 92 + float;
-        const gleam = reducedMotion ? 0.72 : 0.55 + 0.26 * Math.sin(this.elapsed * 1.5 + i * 0.28);
-        this.graphics.circle(x, y, 1.9).fill({ color: i % 3 === 0 ? 0xbfe5e6 : 0xffeac1, alpha: gleam });
-      }
-    }
+    // User-supplied drone paintings live in NightDroneShow, not simulated dots.
   }
 
   clear(): void {
