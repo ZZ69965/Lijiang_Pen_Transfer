@@ -364,20 +364,11 @@ export default function App() {
         <div className="home-wash" aria-hidden="true" />
         <header className="home-header">
           <div className="home-brand"><span className="seal">漓</span><span>桂林 · 漓江<br /><small>山水长卷 · 互动游历</small></span></div>
-          <div className="home-header-tools">
-            <span className="home-header-note">以山水为卷 · 以脚步为笔</span>
-            <div className="home-time-wrap">
-              <span className="home-time-label">一日四境</span>
-              <TimeSwitcher time={time} onTime={selectTime} />
-            </div>
-          </div>
         </header>
         <section className="home-intro">
           <div className="accent-line" />
-          <p className="home-eyebrow">LIJIANG · A LIVING LANDSCAPE</p>
           <h1>漓江<span>移笔游目</span></h1>
           <p className="home-verse">青山一卷开，人在画中游。</p>
-          <p className="home-description">沿一江烟波，走过象鼻山、日月双塔、阳桥与玻璃桥。随晨昏入画，听远山回响。</p>
           <div className="home-actions">
             <button className="action-primary" type="button" onClick={() => selectMode('guided')}>
               <span>入画启程 <small>随画中人 · 沿岸游历</small></span><span aria-hidden="true">↗</span>
@@ -386,13 +377,9 @@ export default function App() {
               <span>山水漫游 <small>自在移卷 · 观景听风</small></span><span aria-hidden="true">↗</span>
             </button>
           </div>
+          {/* Time of day lives inside the painting only; the entry points into
+              the scroll choose it there. */}
         </section>
-        <footer className="home-bottom">
-          <div className="home-route" aria-label="游历路线">
-            <span>象鼻山</span><i /><span>日月双塔</span><i /><span>阳桥</span><i /><span>玻璃桥</span>
-          </div>
-          <span className="home-copyright">原幅高清画卷 · 随时辰入画</span>
-        </footer>
       </main>
     );
   }
