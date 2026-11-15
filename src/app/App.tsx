@@ -57,6 +57,7 @@ export default function App() {
   const stageRef = useRef<StageHandle | null>(null);
   const droneSelectRef = useRef<HTMLSelectElement | null>(null);
   const storyEntryRef = useRef<HTMLButtonElement | null>(null);
+  const [returnFocusToStory, setReturnFocusToStory] = useState(false);
   const [loadStatus, setLoadStatus] = useState<LoadStatus | null>(null);
   // R2: only one card may be open at a time, and nothing is resident by default.
   const [placeCard, setPlaceCard] = useState(false);
@@ -212,8 +213,20 @@ export default function App() {
 
   const closeDroneArtwork = () => {
     setNightDrones(false);
-    requestAnimationFrame(() => storyEntryRef.current?.focus({ preventScroll: true }));
+    // Focus is restored by the effect below, once React has actually removed
+    // the viewer. A bare rAF could fire before the commit and focus a node that
+    // was still disabled/covered.
+    setReturnFocusToStory(true);
   };
+
+  // Hand focus back to the story entry after the viewer unmounts, so keyboard
+  // users land on a real control instead of <body>.
+  useEffect(() => {
+    if (returnFocusToStory && !nightDrones) {
+      storyEntryRef.current?.focus({ preventScroll: true });
+      setReturnFocusToStory(false);
+    }
+  }, [returnFocusToStory, nightDrones]);
 
   useEffect(() => {
     if (nightDrones && time === 'night') droneSelectRef.current?.focus({ preventScroll: true });
