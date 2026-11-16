@@ -105,13 +105,20 @@ try {
       await page.getByRole('button', { name: '更多' }).click();
       await page.getByRole('menuitem', { name: /卷尾/ }).click();
       await page.locator('canvas.elephant-canvas').waitFor({ timeout: 20000 });
-      // '题诗' is a chapter-jump button in the finale scrubber; clicking it lands
-      // on the poem beat, which is the frame worth capturing.
+      // '题诗' is a chapter-jump button in the finale scrubber; clicking it seeks
+      // to the poem beat, which is the frame worth capturing. Wait for the beat
+      // to actually render rather than assuming a 250ms delay is enough.
       await page.getByRole('button', { name: '题诗', exact: true }).click();
-      await pause(250);
-      // Assert the poem actually rendered, not just that a click happened.
-      const poem = await page.locator('.elephant-poem').innerText().catch(() => '');
-      if (!poem.trim()) throw new Error('Finale poem did not render');
+      // The '题诗' stop sits exactly on 0.58 — the same value that flips the
+      // beat orbit->poem — so seek slightly past it rather than landing on the
+      // boundary, and then wait for the beat instead of a fixed delay.
+      const scrub = page.getByRole('slider', { name: /拖动卷尾镜头进度/ });
+      await scrub.focus();
+      await page.keyboard.press('ArrowRight');
+      await page.keyboard.press('ArrowRight');
+      await page.locator('.elephant-poem').waitFor({ timeout: 10000 });
+      const poem = (await page.locator('.elephant-poem').innerText()).trim();
+      if (!poem) throw new Error('Finale poem rendered empty');
       const path = 'visual-qa/desktop-卷尾.jpg';
       await page.screenshot({ path, type: 'jpeg', quality: 45 });
       emitScreenshot(path, 'desktop_卷尾');
