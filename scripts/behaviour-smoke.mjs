@@ -427,6 +427,35 @@ try {
     await context.close();
   }
 
+  // ----------------------------------------- forced 3D failure (fallback path)
+  // The normal run exercises whichever path the environment supports. This one
+  // forces a REAL init failure — WebGLRenderer cannot get a context — instead of
+  // disabling WebGL globally, and then asserts the fallback is genuinely usable.
+  {
+    const { context, page } = await newPage({ width: 1280, height: 720 });
+    await page.addInitScript(() => {
+      const original = HTMLCanvasElement.prototype.getContext;
+      HTMLCanvasElement.prototype.getContext = function (type, ...rest) {
+        if (String(type).startsWith('webgl')) return null;
+        return original.call(this, type, ...rest);
+      };
+    });
+    await page.goto(base, { waitUntil: 'domcontentloaded' });
+    await page.getByRole('button', { name: /入画启程/ }).first().click();
+    await page.waitForSelector('.elephant-fallback', { timeout: 25000 });
+    record('forced 3D failure lands on the fallback panel',
+      await page.locator('.elephant-fallback').isVisible());
+    // The fallback must still get the visitor into the painting, not just appear.
+    await page.getByRole('button', { name: '进入画卷' }).first().click();
+    await page.waitForSelector('.scroll-canvas', { timeout: 20000 });
+    await page.waitForFunction(() => !document.querySelector('.scene-loading'));
+    record('fallback still delivers a usable painting', await page.locator('.scroll-canvas').isVisible());
+    // And the prologue must be gone: no stale 3D canvas left behind.
+    record('fallback leaves no stale 3D canvas', (await page.locator('canvas.elephant-canvas').count()) === 0);
+    await shot(page, 'desktop-15-forced-3d-fallback');
+    await context.close();
+  }
+
   // -------------------------------------------------- current painting fails
   {
     const { context, page } = await newPage({ width: 1280, height: 720 });

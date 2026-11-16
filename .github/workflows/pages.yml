@@ -56,6 +56,39 @@ jobs:
         uses: actions/upload-pages-artifact@v3
         with:
           path: dist
+      # deploy-pages resolves the artifact through the run's artifact list. The
+      # failed run showed upload succeeding (artifact 14160815530) while deploy
+      # listed only one artifact and reported "No artifacts named github-pages",
+      # i.e. an indexing race, not a missing upload. Wait for the index with a
+      # hard deadline so a real failure still fails fast instead of hanging.
+      - name: Wait for github-pages artifact to be indexed
+        id: wait-artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          deadline=$((SECONDS + 120))
+          while :; do
+            found="$(gh api \
+              "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/artifacts" \
+              --jq '[.artifacts[] | select(.name=="github-pages") | select(.expired==false)] | length' \
+              2>/dev/null || echo 0)"
+            if [ "${found}" -ge 1 ]; then
+              echo "github-pages artifact is indexed"
+              gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/artifacts" \
+                --jq '.artifacts[] | select(.name=="github-pages") | {id, name, size_in_bytes, expired}'
+              exit 0
+            fi
+            if [ ${SECONDS} -ge ${deadline} ]; then
+              echo "::error::github-pages artifact not indexed within 120s; refusing to deploy blind"
+              gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/artifacts" \
+                --jq '{count: (.artifacts|length), names: [.artifacts[].name]}' || true
+              exit 1
+            fi
+            echo "not indexed yet, retrying..."
+            sleep 5
+          done
       - name: Deploy to Pages
         id: deployment
         uses: actions/deploy-pages@v4
@@ -121,7 +154,16 @@ jobs:
           echo "OK original music MP3: ${AUDIO_SIZE} bytes"
           echo "Checking uploaded transparent drone artworks"
           for NAME in night-drones-elephant night-drones-festival; do
+            FILE="/tmp/${NAME}.webp"
             curl --fail-with-body --location --retry 5 --retry-delay 3 --retry-all-errors \
-              --silent --show-error "${PAGE_URL%/}/art/${NAME}.webp" -o "/tmp/${NAME}.webp"
+              --silent --show-error "${PAGE_URL%/}/art/${NAME}.webp" -o "${FILE}"
+            SIZE="$(stat -c %s "${FILE}")"
+            # 1280x720 lossless RGBA sits near 59-63 KB; a 404 body or a
+            # placeholder would be far outside this band.
+            if [[ "${SIZE}" -lt 40000 || "${SIZE}" -gt 120000 ]]; then
+              echo "::error::Wrong drone artwork size ${NAME}: ${SIZE} bytes"
+              exit 1
+            fi
+            echo "OK ${NAME}.webp: ${SIZE} bytes"
           done
           echo "HTTP smoke test passed"

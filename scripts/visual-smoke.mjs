@@ -99,10 +99,19 @@ try {
     if (variant.device === 'desktop') {
       await page.locator('.scene-loading').waitFor({ state: 'hidden', timeout: 30000 });
       await page.getByRole('button', { name: /玻璃桥/ }).click();
-      await page.locator('.scene-finale-link').click();
+      // R2 removed the always-on .scene-finale-link; the finale is reached
+      // through the real menu now. Selecting by accessible name keeps this
+      // check honest if the markup changes again.
+      await page.getByRole('button', { name: '更多' }).click();
+      await page.getByRole('menuitem', { name: /卷尾/ }).click();
       await page.locator('canvas.elephant-canvas').waitFor({ timeout: 20000 });
+      // '题诗' is a chapter-jump button in the finale scrubber; clicking it lands
+      // on the poem beat, which is the frame worth capturing.
       await page.getByRole('button', { name: '题诗', exact: true }).click();
       await pause(250);
+      // Assert the poem actually rendered, not just that a click happened.
+      const poem = await page.locator('.elephant-poem').innerText().catch(() => '');
+      if (!poem.trim()) throw new Error('Finale poem did not render');
       const path = 'visual-qa/desktop-卷尾.jpg';
       await page.screenshot({ path, type: 'jpeg', quality: 45 });
       emitScreenshot(path, 'desktop_卷尾');
@@ -110,7 +119,11 @@ try {
       await page.locator('.scroll-canvas').waitFor({ timeout: 30000 });
       console.log('FINALE_RETURN_OK');
     }
-    if (pageErrors.length) console.warn('BROWSER_WARNINGS ' + JSON.stringify(pageErrors.slice(0, 12)));
+    // Unexpected page errors must fail the check, not just warn: a silently
+    // broken frame is exactly what this workflow exists to catch.
+    if (pageErrors.length) {
+      throw new Error('Unexpected page errors: ' + JSON.stringify(pageErrors.slice(0, 12)));
+    }
     await context.close();
   }
 } finally {

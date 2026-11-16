@@ -42,12 +42,21 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y fonts-noto-cjk
       - name: Start preview server
+        shell: bash
         run: |
+          set -euo pipefail
           npm run preview -- --host 127.0.0.1 --port 4173 --strictPort &
           for i in $(seq 1 80); do
-            curl -sf -o /dev/null http://127.0.0.1:4173/Lijiang_Pen_Transfer/ && break
+            if curl -sf -o /dev/null http://127.0.0.1:4173/Lijiang_Pen_Transfer/; then
+              echo "preview ready"
+              exit 0
+            fi
             sleep 1
           done
+          # Never let a dead server look like a started one: the old loop simply
+          # ended and the next step failed with a confusing browser error.
+          echo "::error::preview server did not become ready within 80s"
+          exit 1
       - name: Behaviour regression and screenshots
         env:
           CHROME_BIN: /usr/bin/google-chrome

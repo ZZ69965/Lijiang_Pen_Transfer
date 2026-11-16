@@ -3,11 +3,17 @@ name: Three.js visual QA captures
 on:
   push:
     branches: [main]
+    # Cover the UI this script actually drives, so a markup change that breaks
+    # its selectors is caught here instead of silently going stale.
     paths:
       - .github/workflows/visual-qa.yml
       - scripts/visual-smoke.mjs
-      - src/app/ElephantIntro.tsx
-      - src/engine/ElephantIntroScene.ts
+      - src/app/**
+      - src/engine/**
+      - src/content/**
+      - src/styles/**
+      - package-lock.json
+      - package.json
   workflow_dispatch:
 
 permissions:
@@ -22,10 +28,10 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Install app and browser driver
-        run: |
-          npm install --no-audit --no-fund
-          npm install --no-save --no-audit --no-fund playwright-core@1.56.1
+      # Lockfile install only: the other two workflows use `npm ci`, and a
+      # different install path here could drift from what they verify.
+      - name: Install from lockfile
+        run: npm ci --no-audit --no-fund
       - name: Build project
         run: npm run build
       - name: Install CJK fonts for accurate Chinese typography screenshots
