@@ -108,7 +108,8 @@ try {
       // '题诗' is a chapter-jump button in the finale scrubber; clicking it seeks
       // to the poem beat, which is the frame worth capturing. Wait for the beat
       // to actually render rather than assuming a 250ms delay is enough.
-      await page.getByRole('button', { name: '题诗', exact: true }).click();
+      const finaleRoot = page.locator('.elephant-variant-finale');
+      await finaleRoot.getByRole('button', { name: '题诗', exact: true }).first().click();
       // The '题诗' stop sits exactly on 0.58 — the same value that flips the
       // beat orbit->poem — so seek slightly past it rather than landing on the
       // boundary, and then wait for the beat instead of a fixed delay.
@@ -116,13 +117,15 @@ try {
       await scrub.focus();
       await page.keyboard.press('ArrowRight');
       await page.keyboard.press('ArrowRight');
-      await page.locator('.elephant-poem').waitFor({ timeout: 10000 });
-      const poem = (await page.locator('.elephant-poem').innerText()).trim();
-      if (!poem) throw new Error('Finale poem rendered empty');
+      // Scope to the finale, and take the visible one: strict mode caught two
+      // .elephant-poem nodes (a second element still in the document).
+      const poem = finaleRoot.locator('.elephant-poem').last();
+      await poem.waitFor({ timeout: 10000 });
+      if (!(await poem.innerText()).trim()) throw new Error('Finale poem rendered empty');
       const path = 'visual-qa/desktop-卷尾.jpg';
       await page.screenshot({ path, type: 'jpeg', quality: 45 });
       emitScreenshot(path, 'desktop_卷尾');
-      await page.getByRole('button', { name: '返回画卷' }).click();
+      await finaleRoot.getByRole('button', { name: '返回画卷' }).first().click();
       await page.locator('.scroll-canvas').waitFor({ timeout: 30000 });
       console.log('FINALE_RETURN_OK');
     }
