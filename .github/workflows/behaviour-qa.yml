@@ -5,7 +5,7 @@ name: Painting behaviour QA
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [main, jingjiang]
     paths:
       - 'src/app/**'
       - 'src/engine/**'
@@ -16,6 +16,8 @@ on:
       - 'scripts/drone-smoke.mjs'
       - 'public/art/night-drones-*.webp'
       - 'docs/drone-assets.json'
+      - 'scripts/make-foreground-masks.py'
+      - 'public/art/foreground-mask-*.webp'
       - '.github/workflows/behaviour-qa.yml'
   workflow_dispatch:
 

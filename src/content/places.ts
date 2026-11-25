@@ -17,7 +17,7 @@ export type Place = {
   markerY: number;
   /**
    * Where the walker actually stands when you visit this place: a point on
-   * painted ground (`WALKABLE_SPANS`). The figure looks ACROSS the water at the
+   * painted ground (`WALKWAY`). The figure looks across the water at the
    * subject rather than standing inside it.
    */
   standX: number;
@@ -43,7 +43,7 @@ export const PLACES: readonly Place[] = [
   {
     // The arch and its reflection are the subject; the walker watches from the
     // left bank, since the hill itself is an island in the river.
-    id: 'elephant', number: '壹', name: '象鼻山', worldX: 172, markerY: 446, standX: 620, zoom: 1.16, waterY: 526,
+    id: 'elephant', number: '壹', name: '象鼻山', worldX: 172, markerY: 446, standX: 604, zoom: 1.16, waterY: 526,
     eyebrow: '山水开卷',
     description: '山石临江，天光入水。象鼻山的轮廓，正是这幅画卷的第一笔。',
     hint: '从此处出发，沿着画中的岸线缓缓前行。',
@@ -56,14 +56,14 @@ export const PLACES: readonly Place[] = [
   },
   {
     // Standing mid-arch is the point here: the deck is real painted ground.
-    id: 'yangbridge', number: '叁', name: '阳桥', worldX: 1340, markerY: 381, standX: 1340, zoom: 1.02, waterY: 505,
+    id: 'yangbridge', number: '叁', name: '阳桥', worldX: 1340, markerY: 381, standX: 1390, zoom: 1.02, waterY: 505,
     eyebrow: '一桥横波',
     description: '石桥起伏，栏杆临水。穿桥而过的清风，把两岸人间连成一卷。',
     hint: '可拖动画面仔细观看桥拱和水中倒影。',
   },
   {
     // The glass span crosses open water; the walker stays on the bank beside it.
-    id: 'glassbridge', number: '肆', name: '玻璃桥', worldX: 1837, markerY: 443, standX: 1780, zoom: 1.06, waterY: 508,
+    id: 'glassbridge', number: '肆', name: '玻璃桥', worldX: 1948, markerY: 443, standX: 1760, zoom: 1.06, waterY: 518,
     eyebrow: '听风对歌',
     description: '水边亭廊，灯影摇曳。旅人驻足，向远处青山轻唱一声。',
     hint: '体验“对山歌”姿态演示；音频留待正式授权素材。',

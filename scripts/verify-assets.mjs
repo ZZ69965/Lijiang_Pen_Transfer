@@ -68,6 +68,17 @@ function getDimensionsForNested(buffer) {
   return false;
 }
 
+function hasAlpha(bytes) {
+  for (let offset = 12; offset + 8 < bytes.length;) {
+    const chunk = bytes.toString('ascii', offset, offset + 4);
+    if (chunk === 'VP8X' && bytes[offset + 8] & 0x10) return true;
+    if (chunk === 'VP8L' && (bytes.readUInt32LE(offset + 9) >>> 28) & 1) return true;
+    const length = bytes.readUInt32LE(offset + 4);
+    offset += 8 + length + (length % 2);
+  }
+  return false;
+}
+
 let ok = true;
 for (const [filename, expectedWidth, expectedHeight, minBytes] of manifest) {
   try {
@@ -96,20 +107,29 @@ try {
 }
 if (!ok) process.exitCode = 1;
 
+// Each painting has a compact world-aligned alpha silhouette for the walker.
+for (const variant of ['day', 'dusk', 'night']) {
+  const filename = `foreground-mask-${variant}.webp`;
+  try {
+    const bytes = readFileSync(new URL(`../public/art/${filename}`, import.meta.url));
+    const { width, height, lossless } = getDimensions(bytes);
+    const good = width === 1350 && height === 150 && lossless && hasAlpha(bytes) &&
+      bytes.length >= 4_000 && bytes.length <= 25_000;
+    if (!good) ok = false;
+    console.log(`${good ? 'OK' : 'FAIL'} ${filename}: ${width}x${height}, ${bytes.length} bytes (foreground mask)`);
+  } catch (error) {
+    ok = false;
+    console.error(`FAIL ${filename}: ${error.message}`);
+  }
+}
+
 // Uploaded drone patterns retain native dimensions, original alpha and pixels.
 const droneAssets = JSON.parse(readFileSync(new URL('../docs/drone-assets.json', import.meta.url), 'utf8'));
 for (const asset of droneAssets) {
   try {
     const bytes = readFileSync(new URL(`../public/art/${asset.runtime}`, import.meta.url));
     const info = getDimensions(bytes);
-    let alpha = false;
-    for (let offset = 12; offset + 8 < bytes.length;) {
-      const chunk = bytes.toString('ascii', offset, offset + 4);
-      if (chunk === 'VP8X') alpha ||= Boolean(bytes[offset + 8] & 0x10);
-      if (chunk === 'VP8L') alpha ||= Boolean((bytes.readUInt32LE(offset + 9) >>> 28) & 1);
-      const length = bytes.readUInt32LE(offset + 4);
-      offset += 8 + length + (length % 2);
-    }
+    const alpha = hasAlpha(bytes);
     const good = info.width === 1280 && info.height === 720 && info.lossless && alpha &&
       bytes.length <= 100_000 && createHash('sha256').update(bytes).digest('hex') === asset.runtimeSha256;
     if (!good) ok = false;

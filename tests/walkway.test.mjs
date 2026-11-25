@@ -1,137 +1,81 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  WALKWAY, WALKABLE_SPANS, footlineReviewAt, walkwayY, clampHeroX, isWalkable,
-  HERO_HEIGHT, HERO_SCALE, HERO_REFERENCE_PIXEL_HEIGHT, HERO_MIN_X, HERO_MAX_X, YANG_BRIDGE_PARAPET,
+  WALKWAY, HERO_MIN_X, HERO_MAX_X, HERO_MIN_HEIGHT, HERO_MAX_HEIGHT,
+  HERO_REFERENCE_PIXEL_HEIGHT, clampHeroX, isWalkable, walkwayAt,
 } from '../src/content/walkway.ts';
-import { WORLD_WIDTH, WORLD_HEIGHT, PLACES } from '../src/content/places.ts';
+import { WORLD_WIDTH, PLACES } from '../src/content/places.ts';
 
-test('footline is monotonic in X so the walker never walks backwards into the painting', () => {
+test('the bank-to-bridge path advances continuously in artwork coordinates', () => {
   for (let i = 1; i < WALKWAY.length; i += 1) {
-    assert.ok(WALKWAY[i].x > WALKWAY[i - 1].x, `segment ${i} must advance in X`);
+    assert.ok(WALKWAY[i].x > WALKWAY[i - 1].x, `point ${i} must advance along the scroll`);
   }
-  // Ground starts on the left bank and ends on the right-bank platform; the
-  // open water left of the bank is not walkable.
   assert.equal(WALKWAY[0].x, HERO_MIN_X);
-  assert.equal(WALKWAY[WALKWAY.length - 1].x, HERO_MAX_X);
+  assert.equal(WALKWAY.at(-1).x, HERO_MAX_X);
 });
 
-test('footline stays on the painted lower band and inside the scroll', () => {
-  for (let x = 0; x <= WORLD_WIDTH; x += 10) {
-    const y = walkwayY(x);
-    assert.ok(Number.isFinite(y), `finite at ${x}`);
-    assert.ok(y > 380 && y < 540, `x=${x} y=${y} must stay in the bank/bridge band`);
+test('feet remain on the painted path band and the figure fits the local perspective', () => {
+  for (let x = 0; x <= WORLD_WIDTH; x += 4) {
+    const { y, height } = walkwayAt(x);
+    if (isWalkable(x)) {
+      assert.ok(y > 400 && y < 495, `x=${x}, y=${y} must stay on a painted bank or deck`);
+      assert.ok(height >= HERO_MIN_HEIGHT && height <= HERO_MAX_HEIGHT,
+        `x=${x}, height=${height} must stay in the perspective bounds`);
+    }
   }
+  assert.ok(walkwayAt(620).height > walkwayAt(940).height,
+    'foreground riverbank figures should be larger than the distant garden path');
+  assert.ok(walkwayAt(1340).height > walkwayAt(1780).height,
+    'bridge figures should be larger than visitors farther down the bank');
+  assert.ok(walkwayAt(620).height < HERO_MAX_HEIGHT + 1);
+  assert.ok(walkwayAt(1780).height > HERO_MIN_HEIGHT - 1);
 });
 
-test('interpolation is continuous at the segment joints', () => {
+test('position and scale stay continuous through each authored path point', () => {
   for (const point of WALKWAY) {
-    const before = walkwayY(point.x - 0.01);
-    const after = walkwayY(point.x + 0.01);
-    assert.ok(Math.abs(before - point.y) < 0.5, `approaches ${point.y} from the left`);
-    assert.ok(Math.abs(after - point.y) < 0.5, `leaves ${point.y} to the right`);
+    for (const coordinate of [point.x - 0.01, point.x + 0.01]) {
+      const result = walkwayAt(coordinate);
+      assert.ok(Math.abs(result.y - point.y) < 0.1, `y approaches its footline at x=${point.x}`);
+      assert.ok(Math.abs(result.height - point.height) < 0.1,
+        `perspective scale approaches its anchor at x=${point.x}`);
+    }
   }
 });
 
-test('阳桥 span is explicitly marked pending and needs a foreground layer', () => {
-  const bridge = footlineReviewAt(1340);
-  assert.equal(bridge.review, 'pending', 'bridge deck is not yet verified against the artwork');
-  assert.equal(bridge.foreground, true, 'bridge parapet must occlude the walker once layered');
-
-  // Measured bank and platform segments are checked and carry no parapet.
-  for (const x of [600, 900, 1800, 2000]) {
-    const zone = footlineReviewAt(x);
-    assert.equal(zone.review, 'checked', `x=${x} reviewed`);
-    assert.equal(zone.foreground, false, `x=${x} no rail`);
-  }
-});
-
-test('象鼻山 is an island: the walker never stands in front of it', () => {
-  // The painted hill sits at x≈172 entirely surrounded by water. Ground used to
-  // run through it, which is exactly what made the figure float.
-  const elephant = PLACES.find((place) => place.id === 'elephant');
-  assert.ok(elephant);
-  assert.equal(isWalkable(elephant.worldX), false, 'the framing point is water');
-  assert.equal(isWalkable(elephant.standX), true, 'but the standing point is bank');
-  assert.ok(elephant.standX - elephant.worldX > 200, 'the walker watches across the water');
-  for (const x of [0, 172, 300, 490]) {
-    assert.equal(isWalkable(x), false, `x=${x} is river or island rock`);
-  }
-});
-
-test('every place has a standing point on painted ground', () => {
+test('scene landmarks map to walkable ground, with the glass bridge across the water', () => {
   for (const place of PLACES) {
-    assert.equal(isWalkable(place.standX), true, `${place.id} standX=${place.standX}`);
-    assert.equal(clampHeroX(place.standX), place.standX, `${place.id} standX is already valid`);
-    const zone = footlineReviewAt(place.standX);
-    assert.ok(['checked', 'pending'].includes(zone.review));
-    assert.ok(walkwayY(place.standX) < place.markerY + 90, `${place.id} marker sits above the ground`);
+    assert.equal(isWalkable(place.standX), true, `${place.id} stand=${place.standX}`);
+    const ground = walkwayAt(place.standX);
+    assert.ok(ground.y < place.markerY + 90, `${place.id} has a visible land-to-landmark sightline`);
+  }
+  const glassBridge = PLACES.find((place) => place.id === 'glassbridge');
+  assert.ok(glassBridge);
+  assert.ok(Math.abs(glassBridge.standX - glassBridge.worldX) > 20,
+    'the walker watches the glass bridge from its west bank');
+  assert.equal(isWalkable(glassBridge.worldX), false, 'the bridge span is over the river');
+  for (const waterX of [0, 172, 300, 490, 1837, 2050, 2172]) {
+    assert.equal(isWalkable(waterX), false, `x=${waterX} is outside the connected walkway`);
   }
 });
 
-test('clamping snaps onto the nearest painted land, never onto water', () => {
-  assert.equal(clampHeroX(-500), HERO_MIN_X);
+test('movement and old snapshots clamp to the bank-to-bank route', () => {
+  assert.equal(clampHeroX(-Infinity), HERO_MIN_X);
   assert.equal(clampHeroX(0), HERO_MIN_X);
+  assert.equal(clampHeroX(HERO_MIN_X), HERO_MIN_X);
   assert.equal(clampHeroX(1000), 1000);
-  assert.equal(clampHeroX(HERO_MAX_X + 999), HERO_MAX_X);
-  for (let x = -200; x <= 2400; x += 7) {
-    const snapped = clampHeroX(x);
-    assert.equal(isWalkable(snapped), true, `input ${x} → ${snapped}`);
+  assert.equal(clampHeroX(HERO_MAX_X), HERO_MAX_X);
+  assert.equal(clampHeroX(Infinity), HERO_MAX_X);
+  assert.equal(clampHeroX(Number.NaN), HERO_MIN_X);
+  for (let x = -100; x <= WORLD_WIDTH + 100; x += 3) {
+    assert.equal(isWalkable(clampHeroX(x)), true, `clamp(${x}) lands on the path`);
   }
 });
 
-test('walkable spans are ordered, non-overlapping and inside the world', () => {
-  for (let i = 1; i < WALKABLE_SPANS.length; i += 1) {
-    assert.ok(WALKABLE_SPANS[i].from >= WALKABLE_SPANS[i - 1].to, 'spans advance and do not overlap');
-  }
-  for (const span of WALKABLE_SPANS) {
-    assert.ok(span.from < span.to);
-    assert.ok(span.from >= 0 && span.to <= WORLD_WIDTH);
-  }
-});
-
-test('hero height is calibrated to the painted architecture, not chosen freely', () => {
-  // Reduced from 116 to 96 in R2: the painted revetment parapet is ~34 world
-  // pixels (hip height), so a standing figure belongs near 2.8x that.
-  assert.equal(HERO_HEIGHT, 96);
-  assert.ok(HERO_SCALE > 0 && HERO_SCALE < 0.2, 'source art is downscaled only to world scale');
-  assert.equal(HERO_SCALE, HERO_HEIGHT / HERO_REFERENCE_PIXEL_HEIGHT);
-});
-
-test('each landmark carries a framed zoom and a waterline for local motion', () => {
-  for (const place of PLACES) {
-    // Framing zoom stays near the fit scale: tighter frames the subject, and the
-    // engine floors it at "painting fills the viewport" so no cream margins show.
-    assert.ok(place.zoom >= 0.9 && place.zoom <= 1.3, `${place.id} zoom=${place.zoom}`);
-    // Ambient shimmer must sit on water that is at or below the standing ground,
-    // never up in the mountains.
-    const ground = walkwayY(place.standX);
-    assert.ok(place.waterY >= ground, `${place.id} water ${place.waterY} is below ground ${ground}`);
-    assert.ok(place.waterY <= WORLD_HEIGHT - 20, `${place.id} waterline stays above the scroll edge`);
-  }
-});
-
-test('阳桥 parapet overlay lines up with the deck it is supposed to occlude', () => {
-  // The overlay is a real cut from scene-day.webp; if the deck data drifts away
-  // from it, the walker will either float above the rail or sink below it.
-  const { x, y, width, height } = YANG_BRIDGE_PARAPET;
-  // Sample only the deck span the parapet actually covers (the overlay starts a
-  // little before the deck does, on the approach ramp).
-  const left = 1250;
-  const right = 1440;
-  for (const px of [left, (left + right) / 2, right]) {
-    const deck = walkwayY(px);
-    // Feet belong on the deck COURSE, i.e. in the lower part of the parapet
-    // band. Putting them on the rail crown left the boots poking out beneath
-    // the balustrade.
-    const deckCourse = y + height;
-    assert.ok(deck >= deckCourse - 8 && deck <= deckCourse,
-      `x=${px} deck ${deck.toFixed(1)} must rest on the deck course near ${deckCourse}`);
-    assert.equal(footlineReviewAt(px).foreground, true, `x=${px} is behind the parapet`);
-  }
-  // Outside the span the person is on open bank, with nothing in front.
-  for (const px of [x - 120, x + width + 120]) {
-    if (!isWalkable(px)) continue;
-    assert.equal(footlineReviewAt(px).foreground, false, `x=${px} is not behind the rail`);
-  }
+test('position-dependent scale is uniform for all native poses at a given location', () => {
+  const nearHeight = walkwayAt(620).height;
+  const distantHeight = walkwayAt(1780).height;
+  const scaleAt = (height) => height / HERO_REFERENCE_PIXEL_HEIGHT;
+  assert.equal(scaleAt(nearHeight) * HERO_REFERENCE_PIXEL_HEIGHT, nearHeight);
+  assert.equal(scaleAt(distantHeight) * HERO_REFERENCE_PIXEL_HEIGHT, distantHeight);
+  assert.ok(scaleAt(nearHeight) > scaleAt(distantHeight), 'perspective scale decreases with depth');
 });

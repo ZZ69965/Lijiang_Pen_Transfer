@@ -1,6 +1,6 @@
-import { Application, Assets, Container, Graphics, Sprite, Texture } from 'pixi.js';
+import { Application, Assets, Container, Graphics, RendererType, Sprite, type Texture } from 'pixi.js';
 import { ENCOUNTERS, type EncounterId } from '../content/encounters';
-import { SCENES } from '../content/assets';
+import { CanvasWalkerMask, CONTACT_SHADOW, FOREGROUND_ORIGIN } from './CanvasWalkerMask';
 import { NightEffects, type NightControls } from './NightEffects';
 import { NightDroneShow } from './NightDroneShow';
 import type { DroneArtworkStatus } from '../content/droneArtworks';
@@ -13,10 +13,10 @@ import {
   ALL_ASSETS, assetKey, planAssets, resolvePose, type Pose, type PlannedAsset,
 } from '../content/assets';
 import {
-  HERO_HEIGHT, HERO_SCALE, YANG_BRIDGE_PARAPET, clampHeroX, footlineReviewAt, walkwayY,
+  HERO_REFERENCE_PIXEL_HEIGHT, clampHeroX, walkwayAt,
 } from '../content/walkway';
 import {
-  cameraAround, centreOf, clampZoom, fitZoom, isDrag, resizeCamera, zoomBounds,
+  cameraAround, centreOf, clampLeft, clampZoom, fitZoom, isDrag, resizeCamera, zoomBounds,
   type ViewSize,
 } from '../content/viewport';
 import type { SceneSnapshot } from '../content/snapshot';
@@ -46,7 +46,7 @@ type Point = { x: number; y: number };
 type Ripple = { x: number; y: number; age: number };
 
 const art = (file: string) => `${import.meta.env.BASE_URL}art/${file}`;
-const WALK_SPEED = 185; // world pixels per second at native artwork resolution
+const WALK_SPEED = 112; // world pixels per second at native artwork resolution
 const MAX_FRAME_TIME = 0.05;
 /** Pointer movement (CSS px) above which a gesture is a pan, not a tap. */
 const DRAG_THRESHOLD = 6;
@@ -74,7 +74,14 @@ export class ScrollEngine {
   private readonly readyPoses = new Set<Pose>();
   private readonly loadingKeys = new Set<string>();
   private readonly failedLabels = new Set<string>();
-  private readonly backgrounds = new Map<ArtworkVariant, Sprite>();
+  private readonly backgroundLayer = new Container();
+  private readonly backgrounds = new Map<ArtworkVariant, { sprite: Sprite; weight: number }>();
+  private displayedScene: ArtworkVariant | null = null;
+  private readonly foregroundTextures = new Map<ArtworkVariant, Texture>();
+  private readonly loadingForegrounds = new Set<ArtworkVariant>();
+  private foregroundMask: Sprite | null = null;
+  private activeForeground: Texture | null = null;
+  private canvasWalkerMask: CanvasWalkerMask | null = null;
 
   private readonly markers = new Container();
   private readonly encounterMarkers = new Map<EncounterId, Container>();
@@ -86,7 +93,10 @@ export class ScrollEngine {
   private readonly ripplesLayer = new Graphics();
   private readonly activePointers = new Map<number, Point>();
   private ripples: Ripple[] = [];
+  private readonly walker = new Container();
   private hero: Sprite | null = null;
+  private contactShadow: Graphics | null = null;
+  private initialized = false;
   private ready = false;
   private disposed = false;
   private reducedMotion = false;
@@ -101,17 +111,9 @@ export class ScrollEngine {
   private ambientPlace: Place | null = null;
   private readonly ambientLayer = new Graphics();
   private zoomInitial = 1;
-  private contactShadow: Sprite | null = null;
-  /**
-   * Optional painted PARAPET of 阳桥, drawn ABOVE the walker so someone on the
-   * deck passes behind the balustrade instead of in front of it. Purely
-   * decorative: if it fails to load the painting stays fully usable.
-   */
-  private foreground: Sprite | null = null;
-  private readonly foregroundTextures = new Map<ArtworkVariant, Texture>();
   private time: TimeOfDay = 'morning';
   private nightControls: NightControls = { view: 'shore', lights: false, rhythm: false, music: false, drones: false, droneArtwork: 'elephant' };
-  private heroX = 260;
+  private heroX = PLACES[0].standX;
   private facing: 1 | -1 = 1;
   private walkDirection = 0;
   private destination: number | null = null;
@@ -153,6 +155,7 @@ export class ScrollEngine {
         autoDensity: true,
         resizeTo: this.host,
       });
+      this.initialized = true;
       if (this.disposed) { this.app.destroy(true); return; }
       this.app.canvas.className = 'scroll-canvas';
       this.app.canvas.setAttribute('role', 'img');
@@ -172,6 +175,7 @@ export class ScrollEngine {
       await Promise.all(plan.critical
         .filter((asset) => asset.kind === 'pose')
         .map((asset) => this.loadAsset(asset, false)));
+      if (this.disposed) return;
 
       this.buildWorld();
       this.ready = true;
@@ -193,6 +197,7 @@ export class ScrollEngine {
   private async loadAsset(asset: PlannedAsset, fatal: boolean): Promise<void> {
     if (this.textures.has(asset.key) || this.loadingKeys.has(asset.key)) return;
     this.loadingKeys.add(asset.key);
+    if (asset.kind === 'scene') void this.loadForeground(asset.id as ArtworkVariant);
     try {
       const texture = await Assets.load<Texture>(art(asset.file));
       if (this.disposed) return;
@@ -228,89 +233,93 @@ export class ScrollEngine {
     const sprite = new Sprite(texture);
     sprite.width = WORLD_WIDTH;
     sprite.height = WORLD_HEIGHT;
-    sprite.alpha = variant === artworkForTime(this.time) ? 1 : 0;
-    this.backgrounds.set(variant, sprite);
-    // Paintings sit at the very bottom of the world.
-    this.world.addChildAt(sprite, 0);
+    sprite.alpha = this.displayedScene === null ? 1 : 0;
+    this.backgrounds.set(variant, { sprite, weight: sprite.alpha });
+    this.backgroundLayer.addChild(sprite);
+    if (this.displayedScene === null) this.displayedScene = variant;
     this.syncDroneArtwork();
   }
 
-  /**
-   * Non-fatal decorative overlay; failures only log.
-   *
-   * Each painting has its own lit version of the same railing (day stone, dusk
-   * warmth, night lanterns), so a day cut pasted over the night painting would
-   * look wrong. All three are cut from the same world rectangle.
-   */
-  private async loadForeground(): Promise<void> {
-    const files: Record<ArtworkVariant, string> = {
-      day: 'foreground-yangbridge.png',
-      dusk: 'foreground-yangbridge-dusk.png',
-      night: 'foreground-yangbridge-night.png',
-    };
-    for (const variant of SCENES) {
-      try {
-        const texture = await Assets.load<Texture>(art(files[variant]));
-        if (this.disposed || !this.ready) return;
-        this.foregroundTextures.set(variant, texture);
-      } catch {
-        // The parapet is an enhancement, never a requirement.
-      }
+  private async loadForeground(variant: ArtworkVariant): Promise<void> {
+    if (this.foregroundTextures.has(variant) || this.loadingForegrounds.has(variant)) return;
+    this.loadingForegrounds.add(variant);
+    const label = `前景遮挡 ${SCENE_LABELS[variant]}`;
+    try {
+      const texture = await Assets.load<Texture>(art(`foreground-mask-${variant}.webp`));
+      if (this.disposed) return;
+      this.foregroundTextures.set(variant, texture);
+      this.failedLabels.delete(label);
+      if (this.ready && this.displayedScene === variant) this.syncForeground();
+    } catch {
+      if (!this.disposed) this.failedLabels.add(label);
+    } finally {
+      this.loadingForegrounds.delete(variant);
+      if (!this.disposed) this.emitStatus();
     }
-    if (this.disposed || !this.ready || this.foreground) return;
-    const first = this.foregroundTextures.get(artworkForTime(this.time)) ??
-      this.foregroundTextures.values().next().value;
-    if (!first) return;
-    const sprite = new Sprite(first);
-    // Measured off the paintings: the railing band spans x 1130-1590,
-    // y 368-434. Native size — the artwork is never stretched.
-    sprite.position.set(YANG_BRIDGE_PARAPET.x, YANG_BRIDGE_PARAPET.y);
-    sprite.visible = this.walkerVisible;
-    this.foreground = sprite;
-    // Always above the walker, regardless of which finished loading first.
-    this.world.addChild(sprite);
+  }
+
+  /** Use the silhouette of the visible painting to clip the walker and shadow. */
+  private syncForeground(): void {
+    const texture = this.displayedScene ? this.foregroundTextures.get(this.displayedScene) : undefined;
+    this.activeForeground = texture ?? null;
+    if (!this.hero) return;
+    if (this.app.renderer.type === RendererType.CANVAS) {
+      if (texture && !this.canvasWalkerMask) {
+        this.canvasWalkerMask = new CanvasWalkerMask();
+        this.walker.addChild(this.canvasWalkerMask.sprite);
+      }
+      return;
+    }
+    if (!texture) {
+      this.walker.mask = null;
+      return;
+    }
+    if (!this.foregroundMask) {
+      this.foregroundMask = new Sprite(texture);
+      this.foregroundMask.position.copyFrom(FOREGROUND_ORIGIN);
+      this.foregroundMask.eventMode = 'none';
+      this.foregroundMask.renderable = false;
+      this.world.addChild(this.foregroundMask);
+    } else {
+      this.foregroundMask.texture = texture;
+    }
+    if (!this.walker.mask) {
+      this.walker.setMask({ mask: this.foregroundMask, inverse: true, channel: 'alpha' });
+    }
   }
 
   private buildWorld(): void {
     this.addMarkers();
     this.addEncounterMarkers();
-    this.world.addChild(this.nightEffects.graphics);
-    this.world.addChild(this.droneShow.container);
-    this.world.addChild(this.ambientLayer);
-    this.world.addChild(this.markers);
-    this.world.addChild(this.encounterLayer);
+    this.world.addChild(this.backgroundLayer, this.nightEffects.graphics, this.droneShow.container,
+      this.ambientLayer, this.markers, this.encounterLayer);
     this.updateEncounterVisibility();
 
-    const heroTexture = this.textures.get(assetKey('pose', this.pose)) ??
-      this.textures.get(assetKey('pose', 'front'));
+    this.pose = resolvePose('front', this.readyPoses);
+    const heroTexture = this.textures.get(assetKey('pose', this.pose));
     if (heroTexture) {
       this.hero = new Sprite(heroTexture);
       this.hero.anchor.set(0.5, 1);
-      this.setHeroTexture(this.pose, true);
-      this.hero.position.set(this.heroX, walkwayY(this.heroX));
-      this.world.addChild(this.hero);
-      // A restrained contact shadow is the only cue that the figure is standing
-      // ON the platform rather than floating in front of it.
-      this.contactShadow = new Sprite(Texture.WHITE);
-      this.contactShadow.anchor.set(0.5, 0.5);
-      this.contactShadow.tint = 0x2f3a2e;
-      this.contactShadow.alpha = 0.22;
-      this.contactShadow.width = HERO_HEIGHT * 0.42;
-      this.contactShadow.height = HERO_HEIGHT * 0.06;
-      this.world.addChildAt(this.contactShadow, this.world.getChildIndex(this.hero));
+      this.contactShadow = new Graphics().ellipse(0, 0, CONTACT_SHADOW.radiusX, CONTACT_SHADOW.radiusY)
+        .fill({ color: CONTACT_SHADOW.color, alpha: CONTACT_SHADOW.alpha });
+      this.walker.addChild(this.contactShadow, this.hero);
+      this.walker.visible = this.walkerVisible;
+      this.world.addChild(this.walker);
+      this.syncForeground();
+      this.updateWalker(false);
     } else {
       console.warn('No hero pose available yet; painting remains usable.');
     }
     this.world.addChild(this.ripplesLayer);
     this.app.stage.addChild(this.world);
     this.app.ticker.add(this.tick);
-    void this.loadForeground();
   }
 
   destroy(): void {
+    if (this.disposed) return;
     this.disposed = true;
     this.droneShow.dispose();
-    if (!this.ready) return;
+    if (!this.initialized) return;
     const canvas = this.app.canvas;
     canvas.removeEventListener('pointerdown', this.onPointerDown);
     canvas.removeEventListener('pointermove', this.onPointerMove);
@@ -326,6 +335,12 @@ export class ScrollEngine {
     this.encounterSprites.clear();
     this.backgrounds.clear();
     this.textures.clear();
+    this.walker.mask = null;
+    this.canvasWalkerMask?.destroy();
+    this.canvasWalkerMask = null;
+    this.foregroundTextures.clear();
+    this.foregroundMask = null;
+    this.activeForeground = null;
     this.music = null;
     this.app.destroy(true, { children: true, texture: false, textureSource: false });
     this.ready = false;
@@ -335,7 +350,9 @@ export class ScrollEngine {
 
   private emitStatus(): void {
     if (!this.callbacks.onLoadStatus) return;
+    const foregroundLoading = this.loadingForegrounds.has(artworkForTime(this.time));
     const loading = ALL_ASSETS.filter((asset) => this.loadingKeys.has(asset.key)).map(assetLabel);
+    if (foregroundLoading) loading.push(`前景遮挡 ${SCENE_LABELS[artworkForTime(this.time)]}`);
     this.callbacks.onLoadStatus({
       currentScene: artworkForTime(this.time),
       currentSceneReady: this.readyScenes.has(artworkForTime(this.time)),
@@ -465,7 +482,7 @@ export class ScrollEngine {
       this.cameraTarget = targetX - this.host.clientWidth / (2 * this.zoom);
     }
     this.syncDroneArtwork();
-    if (this.time === 'night' && artworkChanged) this.focusPlace('glassbridge', true);
+    if (this.time === 'night' && artworkChanged) this.focusPlace('glassbridge', { instant: true, frameWalker: false });
     this.applyCamera();
   }
 
@@ -640,8 +657,7 @@ export class ScrollEngine {
   private applyCamera(): void {
     if (!this.ready) return;
     const visibleWidth = this.viewSize.width / this.zoom;
-    const maxLeft = WORLD_WIDTH - visibleWidth;
-    this.cameraLeft = maxLeft < 0 ? maxLeft / 2 : Math.min(maxLeft, Math.max(0, this.cameraLeft));
+    this.cameraLeft = clampLeft(this.cameraLeft, this.zoom, this.viewSize);
     this.world.scale.set(this.zoom);
     const boatPreview = this.time === 'night' && this.nightControls.view === 'boat';
     const drift = boatPreview && !this.reducedMotion ? Math.sin(this.elapsed * 1.25) * 2.1 : 0;
@@ -663,22 +679,34 @@ export class ScrollEngine {
   zoomBy(factor: number): void { this.setZoom(this.zoom * factor); }
 
   setWalkDirection(direction: number): void {
-    if (this.locked) return;
+    if (this.locked || !this.walkerVisible) return;
     this.walkDirection = Math.sign(direction);
-    if (direction) { this.destination = null; this.action = null; }
+    if (direction) {
+      this.destination = null;
+      this.cameraTarget = null;
+      this.action = null;
+    }
   }
 
   setMode(mode: VisitMode): void { this.mode = mode; }
 
   /** Free mode hides the walker entirely; guided mode shows it. */
   setWalkerVisible(visible: boolean): void {
+    const newlyVisible = visible && !this.walkerVisible;
     this.walkerVisible = visible;
-    if (this.hero) this.hero.visible = visible;
-    if (this.contactShadow) this.contactShadow.visible = visible;
+    this.walker.visible = visible;
     if (!visible) {
       this.walkDirection = 0;
       this.destination = null;
+    } else if (newlyVisible && this.ready) {
+      const width = this.viewSize.width / this.zoom;
+      this.cameraTarget = clampLeft(this.keepWalkerInFrame(this.cameraLeft, width), this.zoom, this.viewSize);
+      this.updateWalker(false);
     }
+  }
+
+  private keepWalkerInFrame(left: number, width: number, heroX = this.heroX): number {
+    return Math.max(heroX - width * 0.88, Math.min(heroX - width * 0.12, left));
   }
 
   setTimeOfDay(time: TimeOfDay): void {
@@ -706,7 +734,7 @@ export class ScrollEngine {
    * Frame a painted subject. Camera framing and the standing position are
    * deliberately separate: centring 象鼻山 must not require standing on water.
    */
-  focusPlace(id: PlaceId, instant = false): void {
+  focusPlace(id: PlaceId, { instant = false, frameWalker = true } = {}): void {
     const place = PLACES.find((p) => p.id === id) ?? PLACES[0];
     // Per-subject framing: a wide view would leave 象鼻山 as a small rock in the
     // corner. Clamped to the same bounds the visitor's own zoom obeys.
@@ -725,20 +753,29 @@ export class ScrollEngine {
       }
     }
     this.ambientPlace = place;
-    this.cameraTarget = place.worldX - this.viewSize.width / (2 * this.zoom);
-    if (instant) { this.cameraLeft = this.cameraTarget; this.cameraTarget = null; this.applyCamera(); }
-    // Only the guided "人物随行" mode moves the walker; free mode stays looking.
-    if (this.mode === 'guided' && !instant && this.walkerVisible) {
-      this.destination = clampHeroX(place.standX);
+    const standX = clampHeroX(place.standX);
+    const halfView = this.viewSize.width / (2 * this.zoom);
+    let centre = place.worldX;
+    if (this.mode === 'guided' && this.walkerVisible && frameWalker) {
+      const reach = halfView * 0.76;
+      centre = Math.max(standX - reach, Math.min(standX + reach, centre));
     }
-    // The figure looks AT the subject it was asked to visit, even when it stands
-    // well to the side of it (象鼻山 is watched across the water).
-    if (this.walkerVisible && place.worldX < this.heroX) this.facing = -1;
-    else if (this.walkerVisible && place.worldX > this.heroX) this.facing = 1;
+    this.cameraTarget = clampLeft(centre - halfView, this.zoom, this.viewSize);
+    if (instant) {
+      this.cameraLeft = this.cameraTarget;
+      this.cameraTarget = null;
+      this.destination = null;
+      if (frameWalker) this.heroX = standX;
+      this.applyCamera();
+    } else if (this.mode === 'guided' && this.walkerVisible) {
+      this.destination = standX;
+    }
+    // In free mode remember the corresponding stand point for switching back.
     if (this.mode === 'free') {
-      this.heroX = clampHeroX(place.standX);
+      this.heroX = standX;
       this.action = null;
     }
+    if (place.worldX !== this.heroX) this.facing = place.worldX < this.heroX ? -1 : 1;
   }
 
   performAction(action: 'gaze' | 'song'): void {
@@ -780,24 +817,22 @@ export class ScrollEngine {
     this.cameraLeft = cameraAround(snapshot.cameraCentre, this.zoom, this.viewSize).left;
     this.cameraTarget = null;
     this.applyCamera();
-    if (this.hero) this.hero.position.set(this.heroX, walkwayY(this.heroX));
+    this.updateWalker(false);
   }
 
-  /** Exposed for QA/tests: the segment the walker is standing on. */
-  /** Diagnostics for QA scripts; not used by the UI. */
-  describeLayers(): Record<string, unknown> {
+  /** Diagnostics for the browser regression suite. */
+  describeLayers() {
+    const heroVisible = this.hero !== null && this.walker.visible;
     return {
-      heroY: this.hero ? Math.round(this.hero.y) : null,
-      heroVisible: this.hero?.visible ?? null,
-      foregroundVisible: this.foreground?.visible ?? null,
-      heroIndex: this.hero ? this.world.getChildIndex(this.hero) : null,
-      foregroundIndex: this.foreground ? this.world.getChildIndex(this.foreground) : null,
-      walkerVisible: this.walkerVisible,
+      heroX: this.hero?.x ?? null,
+      heroY: this.hero?.y ?? null,
+      heroHeight: this.hero ? Math.abs(this.hero.scale.y) * HERO_REFERENCE_PIXEL_HEIGHT : null,
+      heroScreenX: this.hero ? this.world.x + this.hero.x * this.world.scale.x : null,
+      heroVisible,
+      pose: this.hero ? this.pose : null,
+      foregroundActive: heroVisible && Boolean(this.walker.mask || this.canvasWalkerMask?.sprite.visible),
+      displayedScene: this.displayedScene,
     };
-  }
-
-  footlineInfo(): { review: string; foreground: boolean } {
-    return footlineReviewAt(this.heroX);
   }
 
   // ------------------------------------------------------------------- poses
@@ -818,28 +853,61 @@ export class ScrollEngine {
     return nearLandmark ? 'side' : 'front';
   }
 
-  /**
-   * Apply a pose if its texture has arrived, otherwise keep a usable stand-in.
-   * The foot anchor (0.5, 1) never changes, so the walker stays on the footline.
-   */
-  private setHeroPose(next: Pose): void {
+  /** All five textures share the same scale at each point on the path. */
+  private updateWalker(walking: boolean): void {
     if (!this.hero) return;
-    const resolved = resolvePose(next, this.readyPoses);
-    if (this.pose === resolved && this.hero.texture === this.textures.get(assetKey('pose', resolved))) return;
-    this.setHeroTexture(resolved, false);
+    const next = this.decidePose(walking);
+    if (next !== this.pose) {
+      const resolved = resolvePose(next, this.readyPoses);
+      const texture = this.textures.get(assetKey('pose', resolved));
+      if (texture && this.pose !== resolved) {
+        this.hero.texture = texture;
+        this.pose = resolved;
+      }
+    }
+    const { y, height } = walkwayAt(this.heroX);
+    const scale = height / HERO_REFERENCE_PIXEL_HEIGHT;
+    this.hero.position.set(this.heroX, y);
+    this.hero.scale.set(scale * this.facing, scale);
+    if (this.contactShadow) {
+      this.contactShadow.position.set(this.heroX, y + CONTACT_SHADOW.offsetY);
+      this.contactShadow.scale.set(height);
+    }
+    if (this.canvasWalkerMask) {
+      const mask = this.activeForeground;
+      this.hero.renderable = !mask;
+      if (this.contactShadow) this.contactShadow.renderable = !mask;
+      this.canvasWalkerMask.sprite.visible = Boolean(mask);
+      if (mask && this.walkerVisible) {
+        this.canvasWalkerMask.draw({ texture: this.hero.texture, mask, x: this.heroX, y, scale, facing: this.facing });
+      }
+    }
   }
 
-  private setHeroTexture(pose: Pose, force: boolean): void {
-    if (!this.hero) return;
-    const texture = this.textures.get(assetKey('pose', pose));
-    if (!texture) return;
-    if (!force && this.pose === pose && this.hero.texture === texture) return;
-    this.hero.texture = texture;
-    // Uniform scale for every pose so the figure never changes size between
-    // standing, walking and singing (see HERO_SCALE for why).
-    this.hero.scale.set(HERO_SCALE, HERO_SCALE);
-    this.hero.scale.x = HERO_SCALE * this.facing;
-    this.pose = pose;
+  private updatePainting(dt: number): void {
+    const desiredScene = artworkForTime(this.time);
+    if (!this.backgrounds.has(desiredScene)) return;
+    const blend = this.reducedMotion ? 1 : Math.min(1, dt * 3.2);
+    let displayed = desiredScene;
+    let greatestWeight = 0;
+    let cumulativeWeight = 0;
+    for (const [id, layer] of this.backgrounds) {
+      const desired = id === desiredScene ? 1 : 0;
+      layer.weight += (desired - layer.weight) * blend;
+      if (Math.abs(desired - layer.weight) < 0.002) layer.weight = desired;
+      // Opacity in stack order: preserve an opaque backdrop all the way through a fade.
+      cumulativeWeight += layer.weight;
+      layer.sprite.alpha = cumulativeWeight > 0 ? layer.weight / cumulativeWeight : 0;
+      if (layer.weight > greatestWeight) {
+        greatestWeight = layer.weight;
+        displayed = id;
+      }
+    }
+    // Keep the old mask until the new painting is the most visible one.
+    if (displayed !== this.displayedScene) {
+      this.displayedScene = displayed;
+      this.syncForeground();
+    }
   }
 
   // -------------------------------------------------------------------- tick
@@ -859,17 +927,7 @@ export class ScrollEngine {
     }
     if (this.time === 'night' && this.nightControls.view === 'boat') this.applyCamera();
 
-    // Crossfade between the ORIGINAL paintings. If the requested painting has
-    // not arrived yet, keep the current one visible instead of fading to blank.
-    const desiredScene = artworkForTime(this.time);
-    if (this.backgrounds.has(desiredScene)) {
-      for (const [id, sprite] of this.backgrounds) {
-        const desired = id === desiredScene ? 1 : 0;
-        const blend = this.reducedMotion ? 1 : Math.min(1, dt * 3.2);
-        sprite.alpha += (desired - sprite.alpha) * blend;
-        if (Math.abs(desired - sprite.alpha) < 0.002) sprite.alpha = desired;
-      }
-    }
+    this.updatePainting(dt);
 
     let direction = this.locked ? 0 : this.walkDirection;
     if (this.locked) this.destination = null;
@@ -878,38 +936,19 @@ export class ScrollEngine {
       if (this.actionSeconds <= 0) this.action = null;
     } else if (!direction && this.destination !== null && !this.locked) {
       const delta = this.destination - this.heroX;
-      if (Math.abs(delta) < 2) this.destination = null;
-      else direction = Math.sign(delta);
+      if (Math.abs(delta) < 2) {
+        this.heroX = this.destination;
+        this.destination = null;
+      } else direction = Math.sign(delta);
     }
     if (direction) {
       this.facing = direction > 0 ? 1 : -1;
       const step = Math.min(WALK_SPEED * dt, this.destination === null ? Infinity : Math.abs(this.destination - this.heroX));
-      this.heroX = clampHeroX(this.heroX + direction * step);
+      const nextX = clampHeroX(this.heroX + direction * step);
+      if (nextX === this.heroX) direction = 0;
+      this.heroX = nextX;
     }
-    if (this.action || direction) this.setHeroPose(this.decidePose(direction !== 0));
-
-    if (this.hero) {
-      const isWalking = !this.action && direction !== 0;
-      const ground = walkwayY(this.heroX);
-      const bob = this.reducedMotion || !isWalking ? 0 : Math.sin(this.elapsed * 11) * 1.6;
-      this.hero.position.set(this.heroX, ground + bob);
-      this.hero.scale.x = Math.abs(this.hero.scale.x) * this.facing;
-      this.hero.visible = this.walkerVisible;
-      // With no walker there is nothing to occlude, so the overlay stays hidden
-      // and the painting is shown exactly as painted.
-      if (this.foreground) {
-        this.foreground.visible = this.walkerVisible;
-        const wanted = this.foregroundTextures.get(artworkForTime(this.time));
-        if (wanted && this.foreground.texture !== wanted) this.foreground.texture = wanted;
-      }
-      if (this.contactShadow) {
-        // Kept on the ground line (no bob) so the shadow reads as the feet's
-        // contact patch; narrower in the bridge shade where light is diffuse.
-        this.contactShadow.visible = this.walkerVisible;
-        this.contactShadow.position.set(this.heroX, ground - 1);
-        this.contactShadow.scale.x = this.facing < 0 ? -1 : 1;
-      }
-    }
+    if (this.walkerVisible) this.updateWalker(direction !== 0);
 
     if (this.cameraTarget !== null) {
       const speed = this.reducedMotion ? 1 : Math.min(1, dt * 4.8);

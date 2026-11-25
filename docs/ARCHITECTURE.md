@@ -14,7 +14,7 @@ ScrollStage.tsx [创建/销毁，转交事件，Engine 生命周期]
 ScrollEngine.ts [Pixi Application + 世界坐标 + 相机 + 角色 + 水纹 + 触屏事件]
     ├── 3 × Sprite 原生画卷 2172×724 (alpha crossfade)
     ├── 4 × Marker (clickable Graphics)
-    ├── 1 × Sprite 角色 (5 pose textures; 位置在折线路径)
+    ├── 人物与接触影（沿岸线定位，按时辰的前景 alpha 遮罩裁切）
     └── Ripple Graphics (独立水面波纹特效)
 ```
 
@@ -25,8 +25,8 @@ ScrollEngine.ts [Pixi Application + 世界坐标 + 相机 + 角色 + 水纹 + �
 - 主页使用 `<img>` + CSS object-fit:cover 作为宣传封面；进入场景后 Pixi 保持原图宽高比。
 - 背景切换**直接替换独立昼/夕/夜绘制**，通过 alpha 交叠过渡，不用 Tint 冒充独立画卷。
 - Hero sprite `anchor=(0.5,1)` 脚底锚点；人物仅是关键姿态。后续使用正式 Atlas 的逐帧动画取代。
-- 角色站在人工测定的临时步道曲线上（`src/content/walkway.ts`），分段标注 `checked/pending`；阳桥段标记 `foreground: true`，等待桥栏前景层。仍不实现严谨遮挡和地形碰撞。
-- 五张姿态共用同一缩放系数 `HERO_SCALE`，切换姿态时人物大小不变。
+- 角色在测定的本地岸线节点上步行，`src/content/walkway.ts` 的 `walkwayAt(x)` 同时给出脚底 Y 和纵深高度。五种姿态在每个世界位置共用 `height / HERO_REFERENCE_PIXEL_HEIGHT` 缩放值，随岸线远近连续透视缩放。
+- `public/art/foreground-mask-{day,dusk,night}.webp` 使用对应原画实测的 alpha 轮廓；Pixi alpha mask 裁切整个 walker group，格栅孔洞保持可见。加载与遮挡跟随 `displayedScene` 的昼/夕/夜原画同步。
 - 静态资源为全分辨率 lossless WebP；显示加载状态，不在仓库提交任何低质量预览版。
 - Pixi 实例创建一次，React StrictMode 下允许组件销毁/重建；input 监听按生命周期清理。
 - `prefers-reduced-motion` 关掉人物弹跳和淡入的平滑运动。
@@ -58,7 +58,7 @@ ScrollEngine.ts [Pixi Application + 世界坐标 + 相机 + 角色 + 水纹 + �
 ```text
 src/content/assets.ts    planAssets(time)：critical = 当前画卷 + 正面/行走（夜间加对山歌）
                          deferred  = 其余画卷与姿态；resolvePose() 提供姿态回退
-src/content/walkway.ts   脚底线与 HERO_SCALE（统一缩放）；每段标注 checked / pending / foreground
+src/content/walkway.ts   岸线、引桥与桥面的脚底位置，以及同坐标的透视高度
 src/content/viewport.ts  fitZoom / clampLeft / resizeCamera：旋转保留世界中心
 src/content/snapshot.ts  SceneSnapshot + readSnapshot() 校验，只做同次访问内恢复
 src/content/market.ts    鱼市状态机（纯函数，非法动作返回同一对象）

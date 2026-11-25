@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { HERO_HEIGHT, HERO_SCALE, HERO_REFERENCE_PIXEL_HEIGHT } from '../src/content/walkway.ts';
+import { HERO_REFERENCE_PIXEL_HEIGHT, walkwayAt } from '../src/content/walkway.ts';
 
 /**
  * Checks the ORIGINAL pose files themselves, so a future re-export cannot
@@ -47,28 +47,15 @@ test('every pose is a lossless WebP at its original resolution', () => {
   }
 });
 
-test('all poses share one scale factor, so the figure never changes size', () => {
-  const sizes = Object.fromEntries(
-    Object.entries(files).map(([pose, path]) => [pose, webpSize(readFileSync(path))]),
-  );
-  // The reference is the standing front pose; the factor is derived from it alone.
-  assert.equal(sizes.front.height, HERO_REFERENCE_PIXEL_HEIGHT);
-  assert.ok(Math.abs(HERO_SCALE - HERO_HEIGHT / sizes.front.height) < 1e-12);
-
-  // Widths are allowed to differ (stride, spread arms) but the PIXEL density of
-  // the character must be identical, i.e. no pose may be pre-scaled differently.
-  // Verify by world width at the shared factor staying in a plausible band.
-  for (const [pose, size] of Object.entries(sizes)) {
-    const worldWidth = size.width * HERO_SCALE;
-    const worldHeight = size.height * HERO_SCALE;
-    // R2 lowered HERO_HEIGHT 116 → 96 to match the painted architecture.
-    assert.ok(worldWidth > 18 && worldWidth < 65, `${pose} world width ${worldWidth.toFixed(1)}`);
-    assert.ok(worldHeight > 78 && worldHeight < 105, `${pose} world height ${worldHeight.toFixed(1)}`);
+test('the stride stays shorter and wider than the standing pose at the same world scale', () => {
+  const front = webpSize(readFileSync(files.front));
+  const walk = webpSize(readFileSync(files.walk));
+  assert.equal(front.height, HERO_REFERENCE_PIXEL_HEIGHT);
+  for (const x of [620, 940, 1390, 1760]) {
+    const scale = walkwayAt(x).height / HERO_REFERENCE_PIXEL_HEIGHT;
+    assert.ok(walk.height * scale < front.height * scale);
+    assert.ok(walk.width * scale > front.width * scale);
   }
-  // A stride pose is shorter than standing — the very reason height-alignment
-  // used to enlarge it. Guard against reintroducing per-pose height alignment.
-  const walkingWorldHeight = sizes.walk.height * HERO_SCALE;
-  assert.ok(walkingWorldHeight < HERO_HEIGHT, 'walk bounding box is shorter than standing');
 });
 
 test('stored reference documents the measured proportions', () => {

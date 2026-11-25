@@ -66,9 +66,9 @@ const ScrollStage = forwardRef<StageHandle, StageProps>(function ScrollStage(pro
       onLoadStatus: (status) => latest.current.onLoadStatus?.(status),
     });
     engineRef.current = engine;
-    // QA hook: lets the browser suite assert real layer order instead of
-    // eyeballing pixels. Only populated in this stage, never used by the app.
-    (window as unknown as { __lijiangEngine?: unknown }).__lijiangEngine = engine;
+    // The browser suite uses this hook to compare masked and unmasked pixels.
+    const qaWindow = window as Window & { __lijiangEngine?: ScrollEngine };
+    qaWindow.__lijiangEngine = engine;
     void engine.init().then(() => {
       if (engineRef.current !== engine) return;
       engine.setMode(latest.current.mode);
@@ -81,10 +81,11 @@ const ScrollStage = forwardRef<StageHandle, StageProps>(function ScrollStage(pro
       // open on the landmark the visitor chose.
       const restore = latest.current.restoreFrom;
       if (restore) engine.restoreView(restore);
-      else engine.focusPlace(latest.current.target, true);
+      else engine.focusPlace(latest.current.target, { instant: true });
     });
     return () => {
       engineRef.current = null;
+      if (qaWindow.__lijiangEngine === engine) delete qaWindow.__lijiangEngine;
       engine.destroy();
     };
   }, []);

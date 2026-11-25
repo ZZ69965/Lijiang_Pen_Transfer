@@ -19,7 +19,7 @@ npm run preview
 
 - Vite 配置：`base: '/Lijiang_Pen_Transfer/'`；`public/art/` 拷贝到构建根目录，不能写死为网站根路径 `/art/`。
 - GitHub Pages：`Settings → Pages → Build and deployment → Source = GitHub Actions`。
-- 主分支 workflow `pages.yml`：TypeScript 检查、Vite build、上传 dist、Deploy Pages、通过 `curl` 检查真实部署 HTML/JS/图片。
+- 展示分支 `jingjiang` 的 `pages.yml` 执行单测、类型检查、Vite 构建与 Pages 发布，再检查部署地址上的 HTML、JS 和素材；三张前景遮罩会与构建产物逐字节比较。镜像仓库需启用 Actions，`github-pages` 环境需允许 `jingjiang` 部署。
 - `curl` **不能代替截图或像素级验收**，必须查看桌面、手机画卷是否完整、是否被 UI 遮挡。
 - 如在 CI 外 curl 出现 DNS 错误（`Could not resolve host`），那只说明调用环境网络不可达，不能直接断言站点 404。
 

@@ -575,7 +575,7 @@ export default function App() {
       {!ready && !error && <div className="scene-loading" role="status"><div className="loading-ornament">◈</div>山水正在徐徐展开…<small>{loadStatus ? `正在载入${loadStatus.currentScene === 'day' ? '白昼' : loadStatus.currentScene === 'dusk' ? '夕照' : '夜景'}原幅无损画卷` : '正在载入原幅无损画卷'}</small></div>}
       {ready && loadStatus && loadStatus.failed.length > 0 && (
         <p className="scene-load-note" role="status">
-          以下素材未能载入，已改用可用姿态或热点：{loadStatus.failed.join('、')}
+          以下素材未能载入，仍可继续游览：{loadStatus.failed.join('、')}
         </p>
       )}
       {error && <div className="scene-error" role="alert"><strong>画卷暂未展开</strong><p>{error}</p><button onClick={() => window.location.reload()}>重试载入</button></div>}
