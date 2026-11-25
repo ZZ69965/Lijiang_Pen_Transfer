@@ -832,6 +832,8 @@ export class ScrollEngine {
       pose: this.hero ? this.pose : null,
       foregroundActive: heroVisible && Boolean(this.walker.mask || this.canvasWalkerMask?.sprite.visible),
       displayedScene: this.displayedScene,
+      cameraCentre: centreOf({ left: this.cameraLeft, zoom: this.zoom }, this.viewSize),
+      cameraSettled: this.cameraTarget === null,
     };
   }
 

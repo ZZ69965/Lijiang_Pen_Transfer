@@ -245,27 +245,19 @@ try {
     record('panning does not open a story card', (await page.locator('.encounter-sheet').count()) === 0);
 
     // ----------------------------------------------------- finale round trip
-    // The camera eases toward its target, so sample only once it has stopped
-    // moving; comparing mid-ease made this check flap between 44/44 and 43/44.
-    const settledProgress = async () => {
-      let previous = null;
-      let stable = 0;
-      for (let i = 0; i < 30; i += 1) {
-        const value = await page.locator('.scroll-progress').getAttribute('aria-label');
-        stable = value === previous ? stable + 1 : 0;
-        if (stable >= 2) return value;
-        previous = value;
-        await page.waitForTimeout(150);
-      }
-      return previous;
+    // The camera eases toward its target; the progress label updates coarsely,
+    // so compare the engine's camera centre once it has actually arrived.
+    const settleCamera = async () => {
+      await page.waitForFunction(() => window.__lijiangEngine?.describeLayers().cameraSettled, null, { timeout: 30000 });
+      return page.evaluate(() => window.__lijiangEngine.describeLayers().cameraCentre);
     };
     await page.locator('.scene-landmarks button', { hasText: '玻璃桥' }).click();
     await page.waitForTimeout(900);
     await page.locator('.scene-landmarks button', { hasText: '阳桥' }).click();
     await page.waitForTimeout(900);
     await page.locator('.scene-landmarks button', { hasText: '玻璃桥' }).click();
-    await page.waitForTimeout(1200);
-    const progressBefore = await settledProgress();
+    const cameraBefore = await settleCamera();
+    const progressBefore = await page.locator('.scroll-progress').getAttribute('aria-label');
     await page.getByRole('button', { name: '更多' }).click();
     await page.getByRole('menuitem', { name: /卷尾/ }).click();
     await page.waitForSelector('.elephant-variant-finale', { timeout: 20000 });
@@ -283,10 +275,12 @@ try {
     await back.click();
     await page.waitForSelector('.scroll-canvas', { timeout: 20000 });
     await page.waitForFunction(() => !document.querySelector('.scene-loading'));
-    await page.waitForTimeout(900);
+    const cameraAfter = await settleCamera();
     const progressAfter = await page.locator('.scroll-progress').getAttribute('aria-label');
     const samePlace = await page.locator('.scene-landmarks button[aria-current="location"]').innerText().catch(() => '');
-    record('finale return restores the 4th-scene camera', progressBefore === progressAfter, `${progressBefore} → ${progressAfter}`);
+    record('finale return restores the 4th-scene camera',
+      Math.abs(cameraBefore - cameraAfter) <= 1,
+      `${progressBefore} → ${progressAfter}, centre ${cameraBefore.toFixed(1)} → ${cameraAfter.toFixed(1)}`);
     record('finale return restores the landmark', /玻璃桥/.test(samePlace), samePlace.replace(/\s+/g, ' '));
     await shot(page, 'desktop-10-after-finale-return');
 
@@ -343,11 +337,12 @@ try {
     await page.getByRole('button', { name: '关闭互动' }).click();
 
     // -------------------------------------------------------- rotation check
-    const before = await settledProgress();
+    const before = await settleCamera();
     await page.setViewportSize({ width: 390, height: 844 });
     await page.waitForTimeout(900);
-    const after = await settledProgress();
-    record('rotation keeps the viewed position', before === after, `${before} → ${after}`);
+    const after = await settleCamera();
+    record('rotation keeps the viewed position', Math.abs(before - after) <= 1,
+      `${before.toFixed(1)} → ${after.toFixed(1)}`);
     await shot(page, 'desktop-11-rotated-portrait');
 
     record('no uncaught page errors (desktop)', errors.length === 0, errors.slice(0, 2).join(' | '));
