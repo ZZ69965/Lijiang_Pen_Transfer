@@ -245,13 +245,27 @@ try {
     record('panning does not open a story card', (await page.locator('.encounter-sheet').count()) === 0);
 
     // ----------------------------------------------------- finale round trip
+    // The camera eases toward its target, so sample only once it has stopped
+    // moving; comparing mid-ease made this check flap between 44/44 and 43/44.
+    const settledProgress = async () => {
+      let previous = null;
+      let stable = 0;
+      for (let i = 0; i < 30; i += 1) {
+        const value = await page.locator('.scroll-progress').getAttribute('aria-label');
+        stable = value === previous ? stable + 1 : 0;
+        if (stable >= 2) return value;
+        previous = value;
+        await page.waitForTimeout(150);
+      }
+      return previous;
+    };
     await page.locator('.scene-landmarks button', { hasText: '玻璃桥' }).click();
     await page.waitForTimeout(900);
     await page.locator('.scene-landmarks button', { hasText: '阳桥' }).click();
     await page.waitForTimeout(900);
     await page.locator('.scene-landmarks button', { hasText: '玻璃桥' }).click();
     await page.waitForTimeout(1200);
-    const progressBefore = await page.locator('.scroll-progress').getAttribute('aria-label');
+    const progressBefore = await settledProgress();
     await page.getByRole('button', { name: '更多' }).click();
     await page.getByRole('menuitem', { name: /卷尾/ }).click();
     await page.waitForSelector('.elephant-variant-finale', { timeout: 20000 });
@@ -329,18 +343,6 @@ try {
     await page.getByRole('button', { name: '关闭互动' }).click();
 
     // -------------------------------------------------------- rotation check
-    // The camera eases toward its target, so sample only once it has settled;
-    // comparing mid-ease made this check flap between 44/44 and 43/44.
-    const settledProgress = async () => {
-      let previous = null;
-      for (let i = 0; i < 20; i += 1) {
-        const value = await page.locator('.scroll-progress').getAttribute('aria-label');
-        if (value === previous) return value;
-        previous = value;
-        await page.waitForTimeout(150);
-      }
-      return previous;
-    };
     const before = await settledProgress();
     await page.setViewportSize({ width: 390, height: 844 });
     await page.waitForTimeout(900);
